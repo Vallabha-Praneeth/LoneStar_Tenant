@@ -1,12 +1,13 @@
 {
-  "name": "@org-incubation/web",
+  "name": "@lonestar-tenant/web",
   "private": true,
   "version": "0.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "react": "^18.3.1",

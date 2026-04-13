@@ -16,6 +16,34 @@ Rules:
 - copied reference files live under `references/`
 - no symlinks or in-place edits back into `adtruck-proof-main/` or `adtruck-driver-native/`
 
+## Workspace setup
+
+Package manager choice:
+
+- root workspace: `npm` workspaces
+- web app package: `@lonestar-tenant/web`
+- mobile app package: `@lonestar-tenant/mobile`
+
+Primary root scripts:
+
+- `npm run dev:web`
+- `npm run build:web`
+- `npm run preview:web`
+- `npm run type-check:web`
+- `npm run start:mobile`
+- `npm run android:mobile`
+- `npm run ios:mobile`
+- `npm run web:mobile`
+- `npm run type-check:mobile`
+- `npm run type-check`
+
+Expected working model:
+
+- operate the web spike from `web/`
+- operate the mobile spike from `mobile/`
+- treat `supabase/` as the source for tenant schema, policies, and edge functions
+- keep `references/` read-only
+
 Current contents:
 
 - `PLAN.md`: canonical implementation plan for this workspace

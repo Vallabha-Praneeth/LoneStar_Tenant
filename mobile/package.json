@@ -1,5 +1,5 @@
 {
-  "name": "@org-incubation/mobile",
+  "name": "@lonestar-tenant/mobile",
   "private": true,
   "version": "0.0.1",
   "main": "index.js",
