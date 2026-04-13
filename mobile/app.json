@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Org Incubation Mobile",
+    "slug": "org-incubation-mobile",
+    "scheme": "org-incubation",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.lonestar.orgincubation"
+    },
+    "android": {
+      "package": "com.lonestar.orgincubation"
+    }
+  }
+}
