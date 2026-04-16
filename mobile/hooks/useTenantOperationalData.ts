@@ -15,6 +15,8 @@ const EMPTY_DATA: TenantOperationalData = {
   shifts: [],
   drivers: [],
   clients: [],
+  costTypes: [],
+  campaignCosts: [],
 };
 
 export function useTenantOperationalData() {

@@ -2,7 +2,9 @@ import type { TenantRole } from '../../shared/tenant-types';
 import type { MobileUserViewModel } from './mobile-view-models';
 import type {
   Campaign,
+  CampaignCost,
   Client,
+  CostType,
   Driver,
   Proof,
   Route,
@@ -74,6 +76,21 @@ interface CampaignPhotoRow {
   is_hidden: boolean;
 }
 
+interface CostTypeRow {
+  id: string;
+  name: string;
+  is_active: boolean;
+}
+
+interface CampaignCostRow {
+  id: string;
+  campaign_id: string;
+  cost_type_id: string;
+  amount: number;
+  notes: string | null;
+  recorded_at: string;
+}
+
 interface RawOperationalDataset {
   profiles: ProfileRow[];
   clients: ClientRow[];
@@ -82,6 +99,8 @@ interface RawOperationalDataset {
   campaigns: CampaignRow[];
   shifts: DriverShiftRow[];
   photos: CampaignPhotoRow[];
+  costTypes: CostTypeRow[];
+  campaignCosts: CampaignCostRow[];
 }
 
 export interface TenantOperationalData {
@@ -91,6 +110,8 @@ export interface TenantOperationalData {
   shifts: Shift[];
   drivers: Driver[];
   clients: Client[];
+  costTypes: CostType[];
+  campaignCosts: CampaignCost[];
 }
 
 export interface ScopedTenantOperationalData extends TenantOperationalData {
@@ -98,6 +119,8 @@ export interface ScopedTenantOperationalData extends TenantOperationalData {
   visibleProofs: Proof[];
   visibleRoutes: Route[];
   visibleShifts: Shift[];
+  costTypes: CostType[];
+  campaignCosts: CampaignCost[];
 }
 
 const CACHE = new Map<string, TenantOperationalData>();
@@ -250,6 +273,8 @@ async function fetchRawOperationalDataset(accessToken: string, organizationId: s
     campaigns,
     shifts,
     photos,
+    costTypes,
+    campaignCosts,
   ] = await Promise.all([
     fetchSupabaseRows<ProfileRow>('profiles', {
       select: 'id,role,display_name,email,client_id,is_active',
@@ -287,6 +312,17 @@ async function fetchRawOperationalDataset(accessToken: string, organizationId: s
       is_hidden: 'eq.false',
       order: 'submitted_at.desc',
     }, accessToken),
+    fetchSupabaseRows<CostTypeRow>('cost_types', {
+      select: 'id,name,is_active',
+      ...baseFilter,
+      is_active: 'eq.true',
+      order: 'name.asc',
+    }, accessToken),
+    fetchSupabaseRows<CampaignCostRow>('campaign_costs', {
+      select: 'id,campaign_id,cost_type_id,amount,notes,recorded_at',
+      ...baseFilter,
+      order: 'recorded_at.desc',
+    }, accessToken),
   ]);
 
   return {
@@ -297,6 +333,8 @@ async function fetchRawOperationalDataset(accessToken: string, organizationId: s
     campaigns,
     shifts,
     photos,
+    costTypes,
+    campaignCosts,
   };
 }
 
@@ -316,6 +354,7 @@ function mapOperationalDataset(raw: RawOperationalDataset, organizationId: strin
     map.set(photo.campaign_id, current);
     return map;
   }, new Map());
+  const costTypeById = new Map(raw.costTypes.map((ct) => [ct.id, ct]));
 
   const campaigns: Campaign[] = raw.campaigns.map((campaign) => {
     const status = mapCampaignStatus(campaign.status);
@@ -466,6 +505,22 @@ function mapOperationalDataset(raw: RawOperationalDataset, organizationId: strin
     };
   });
 
+  const costTypes: CostType[] = raw.costTypes.map((ct) => ({
+    id: ct.id,
+    name: ct.name,
+    isActive: ct.is_active,
+  }));
+
+  const campaignCosts: CampaignCost[] = raw.campaignCosts.map((cc) => ({
+    id: cc.id,
+    campaignId: cc.campaign_id,
+    costTypeId: cc.cost_type_id,
+    costTypeName: costTypeById.get(cc.cost_type_id)?.name ?? 'Unknown',
+    amount: cc.amount,
+    notes: cc.notes ?? '',
+    recordedAt: cc.recorded_at,
+  }));
+
   return {
     campaigns,
     proofs,
@@ -473,6 +528,8 @@ function mapOperationalDataset(raw: RawOperationalDataset, organizationId: strin
     shifts,
     drivers,
     clients,
+    costTypes,
+    campaignCosts,
   };
 }
 

@@ -101,6 +101,22 @@ export interface Route {
   tenantId: string;
 }
 
+export interface CostType {
+  id: string;
+  name: string;
+  isActive: boolean;
+}
+
+export interface CampaignCost {
+  id: string;
+  campaignId: string;
+  costTypeId: string;
+  costTypeName: string;
+  amount: number;
+  notes: string;
+  recordedAt: string;
+}
+
 export interface AnalyticsSummary {
   tenantId: string;
   period: string;

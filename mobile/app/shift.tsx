@@ -20,13 +20,18 @@ import { ThemedText } from '../components/ui/ThemedText';
 import { ThemedView } from '../components/ui/ThemedView';
 import { type Campaign, type Shift } from '../constants/mockData';
 import colors from '../constants/colors';
+import {
+  SUPABASE_ANON_KEY_VALUE,
+  SUPABASE_REST_URL,
+} from '../constants/supabase';
 import type { TenantTheme } from '../constants/tenants';
+import { clearTenantOperationalDataCache } from '../constants/tenant-operational-data';
 import { useAuth } from '../context/AuthContext';
 import { useTenant } from '../context/TenantContext';
 import { useTenantOperationalData } from '../hooks/useTenantOperationalData';
 
 export default function ShiftScreen() {
-  const { user } = useAuth();
+  const { user, accessToken, bootstrap } = useAuth();
   const { tenant } = useTenant();
   const insets = useSafeAreaInsets();
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
@@ -39,12 +44,111 @@ export default function ShiftScreen() {
   const [odometer, setOdometer] = React.useState('');
   const [selectedCampaign, setSelectedCampaign] = React.useState(campaigns[0]?.id ?? '');
   const [shiftEnded, setShiftEnded] = React.useState(false);
+  const [actionError, setActionError] = React.useState<string | null>(null);
+  const [isStartingShift, setIsStartingShift] = React.useState(false);
+  const [isEndingShift, setIsEndingShift] = React.useState(false);
+  const organizationId = bootstrap?.organization?.id ?? null;
 
   React.useEffect(() => {
     if (!selectedCampaign && campaigns[0]?.id) {
       setSelectedCampaign(campaigns[0].id);
     }
   }, [campaigns, selectedCampaign]);
+
+  async function readResponseError(response: Response, fallback: string) {
+    const raw = await response.text();
+    if (!raw) {
+      return fallback;
+    }
+    try {
+      const parsed = JSON.parse(raw) as { error?: string; message?: string; msg?: string };
+      return parsed.error ?? parsed.message ?? parsed.msg ?? fallback;
+    } catch {
+      return raw;
+    }
+  }
+
+  async function handleStartShift() {
+    if (!accessToken || !organizationId || !user?.id) {
+      setActionError('Missing authentication context. Please sign in again.');
+      return;
+    }
+    if (!selectedCampaign) {
+      setActionError('Select a campaign before starting a shift.');
+      return;
+    }
+
+    setActionError(null);
+    setIsStartingShift(true);
+    try {
+      const response = await fetch(`${SUPABASE_REST_URL}/driver_shifts`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          apikey: SUPABASE_ANON_KEY_VALUE,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({
+          organization_id: organizationId,
+          campaign_id: selectedCampaign,
+          driver_profile_id: user.id,
+          started_at: new Date().toISOString(),
+          shift_status: 'active',
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await readResponseError(response, 'Could not start shift.'));
+      }
+
+      clearTenantOperationalDataCache();
+      router.back();
+    } catch (startError) {
+      setActionError(startError instanceof Error ? startError.message : 'Could not start shift.');
+    } finally {
+      setIsStartingShift(false);
+    }
+  }
+
+  async function handleEndShift() {
+    if (!accessToken || !organizationId || !activeShift?.id) {
+      setActionError('No active shift found to end.');
+      return;
+    }
+
+    setActionError(null);
+    setIsEndingShift(true);
+    try {
+      const response = await fetch(
+        `${SUPABASE_REST_URL}/driver_shifts?id=eq.${activeShift.id}&organization_id=eq.${organizationId}`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            apikey: SUPABASE_ANON_KEY_VALUE,
+            'Content-Type': 'application/json',
+            Prefer: 'return=minimal',
+          },
+          body: JSON.stringify({
+            ended_at: new Date().toISOString(),
+            shift_status: 'completed',
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(await readResponseError(response, 'Could not end shift.'));
+      }
+
+      clearTenantOperationalDataCache();
+      setShiftEnded(true);
+    } catch (endError) {
+      setActionError(endError instanceof Error ? endError.message : 'Could not end shift.');
+    } finally {
+      setIsEndingShift(false);
+    }
+  }
 
   return (
     <ThemedView style={styles.root}>
@@ -65,7 +169,9 @@ export default function ShiftScreen() {
             odometer={odometer}
             setOdometer={setOdometer}
             shiftEnded={shiftEnded}
-            onEndShift={() => setShiftEnded(true)}
+            onEndShift={() => void handleEndShift()}
+            isEndingShift={isEndingShift}
+            actionError={actionError}
           />
         ) : (
           <StartShiftSection
@@ -76,6 +182,9 @@ export default function ShiftScreen() {
             setOdometer={setOdometer}
             selectedCampaign={selectedCampaign}
             setSelectedCampaign={setSelectedCampaign}
+            onStartShift={() => void handleStartShift()}
+            isStartingShift={isStartingShift}
+            actionError={actionError}
           />
         )}
 
@@ -101,9 +210,6 @@ export default function ShiftScreen() {
           ))}
         </View>
 
-        <ThemedText variant="caption" color={theme.mutedForeground} style={styles.note}>
-          Shift history is live demo data. Start/end actions remain placeholder-only.
-        </ThemedText>
       </ScrollView>
     </ThemedView>
   );
@@ -117,6 +223,8 @@ function ActiveShiftSection({
   setOdometer,
   shiftEnded,
   onEndShift,
+  isEndingShift,
+  actionError,
 }: {
   shift: Shift;
   theme: TenantTheme;
@@ -125,6 +233,8 @@ function ActiveShiftSection({
   setOdometer: (value: string) => void;
   shiftEnded: boolean;
   onEndShift: () => void;
+  isEndingShift: boolean;
+  actionError: string | null;
 }) {
   return (
     <Card style={styles.activeCard}>
@@ -168,7 +278,18 @@ function ActiveShiftSection({
               />
             </View>
           </View>
-          <Button label="End Shift" variant="destructive" onPress={onEndShift} disabled={!odometer} />
+          <Button
+            label={isEndingShift ? 'Ending Shift...' : 'End Shift'}
+            variant="destructive"
+            onPress={onEndShift}
+            disabled={!odometer || isEndingShift}
+            loading={isEndingShift}
+          />
+          {actionError ? (
+            <ThemedText variant="caption" color={theme.mutedForeground}>
+              {actionError}
+            </ThemedText>
+          ) : null}
         </>
       ) : (
         <View style={styles.ended}>
@@ -189,6 +310,9 @@ function StartShiftSection({
   setOdometer,
   selectedCampaign,
   setSelectedCampaign,
+  onStartShift,
+  isStartingShift,
+  actionError,
 }: {
   campaigns: Campaign[];
   theme: TenantTheme;
@@ -197,6 +321,9 @@ function StartShiftSection({
   setOdometer: (value: string) => void;
   selectedCampaign: string;
   setSelectedCampaign: (id: string) => void;
+  onStartShift: () => void;
+  isStartingShift: boolean;
+  actionError: string | null;
 }) {
   return (
     <Card style={styles.section}>
@@ -239,7 +366,17 @@ function StartShiftSection({
         </View>
       </View>
 
-      <Button label="Start Shift" onPress={() => router.back()} disabled={!selectedCampaign || !odometer} />
+      <Button
+        label={isStartingShift ? 'Starting Shift...' : 'Start Shift'}
+        onPress={onStartShift}
+        disabled={!selectedCampaign || !odometer || isStartingShift}
+        loading={isStartingShift}
+      />
+      {actionError ? (
+        <ThemedText variant="caption" color={theme.mutedForeground}>
+          {actionError}
+        </ThemedText>
+      ) : null}
     </Card>
   );
 }
@@ -290,5 +427,4 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     marginBottom: 8,
   },
-  note: { textAlign: 'center' },
 });

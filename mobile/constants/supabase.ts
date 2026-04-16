@@ -44,6 +44,8 @@ export interface CreateCampaignProofUploadInput {
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+export const SUPABASE_REST_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL ?? ''}/rest/v1`;
+export const SUPABASE_ANON_KEY_VALUE = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 export const CAMPAIGN_PROOFS_BUCKET = 'campaign-proofs';
 export const MAX_PROOF_UPLOAD_BYTES = 15 * 1024 * 1024;
 
