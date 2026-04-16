@@ -1,4 +1,5 @@
 import { Feather } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import React from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -36,7 +37,19 @@ export default function AdminRoutesScreen() {
 
   return (
     <ThemedView style={styles.root} accessibilityLabel="screen-admin-routes" testID="screen-admin-routes">
-      <AppHeader title="Routes" />
+      <AppHeader
+        title="Routes"
+        rightAction={(
+          <Pressable
+            onPress={() => router.push('/(admin)/route-form')}
+            accessibilityLabel="action-route-create"
+            testID="action-route-create"
+            style={({ pressed }) => [styles.headerAction, pressed ? styles.headerActionPressed : null]}
+          >
+            <Feather name="plus" size={20} color={theme.primary} />
+          </Pressable>
+        )}
+      />
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: botPad + 80 }]} showsVerticalScrollIndicator={false}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
           {FILTERS.map((candidate) => (
@@ -73,7 +86,13 @@ export default function AdminRoutesScreen() {
         ) : (
           <Card padded={false} style={styles.list}>
             {filtered.map((route, index) => (
-              <RouteRow key={route.id} route={route} theme={theme} isLast={index === filtered.length - 1} />
+              <RouteRow
+                key={route.id}
+                route={route}
+                theme={theme}
+                isLast={index === filtered.length - 1}
+                onPress={() => router.push({ pathname: '/(admin)/route-form', params: { routeId: route.id } })}
+              />
             ))}
           </Card>
         )}
@@ -86,49 +105,53 @@ function RouteRow({
   route,
   theme,
   isLast,
+  onPress,
 }: {
   route: Route;
   theme: TenantTheme;
   isLast: boolean;
+  onPress: () => void;
 }) {
   return (
     <>
-      <View style={styles.routeRow}>
-        <View style={styles.iconWrap}>
-          <Feather name="navigation" size={16} color={theme.primary} />
-        </View>
-        <View style={styles.routeContent}>
-          <View style={styles.routeHeader}>
-            <ThemedText variant="label" style={styles.routeName} numberOfLines={1}>
-              {route.name}
+      <Pressable onPress={onPress} style={({ pressed }) => [styles.routePressable, pressed ? styles.routePressablePressed : null]}>
+        <View style={styles.routeRow}>
+          <View style={styles.iconWrap}>
+            <Feather name="navigation" size={16} color={theme.primary} />
+          </View>
+          <View style={styles.routeContent}>
+            <View style={styles.routeHeader}>
+              <ThemedText variant="label" style={styles.routeName} numberOfLines={1}>
+                {route.name}
+              </ThemedText>
+              <Badge
+                label={route.status}
+                variant={route.status === 'active' ? 'success' : route.status === 'scheduled' ? 'warning' : 'neutral'}
+              />
+            </View>
+            <ThemedText variant="caption" color={theme.mutedForeground} numberOfLines={1}>
+              {route.campaignName}
             </ThemedText>
-            <Badge
-              label={route.status}
-              variant={route.status === 'active' ? 'success' : route.status === 'scheduled' ? 'warning' : 'neutral'}
-            />
-          </View>
-          <ThemedText variant="caption" color={theme.mutedForeground} numberOfLines={1}>
-            {route.campaignName}
-          </ThemedText>
-          <View style={styles.routeMeta}>
-            <Feather name="map-pin" size={11} color={theme.mutedForeground} />
-            <ThemedText variant="caption" color={theme.mutedForeground}>
-              {route.startPoint} → {route.endPoint}
-            </ThemedText>
-          </View>
-          <View style={styles.routeFooter}>
-            {route.assignedDriverName ? (
-              <View style={styles.driverChip}>
-                <AvatarBadge initials={route.assignedDriverName.split(' ').map((name) => name[0]).join('')} size={18} />
-                <ThemedText variant="caption" color={theme.mutedForeground}>{route.assignedDriverName}</ThemedText>
-              </View>
-            ) : (
-              <ThemedText variant="caption" color={theme.mutedForeground}>Unassigned</ThemedText>
-            )}
-            <ThemedText variant="caption" color={theme.mutedForeground}>{route.estimatedMiles} mi</ThemedText>
+            <View style={styles.routeMeta}>
+              <Feather name="map-pin" size={11} color={theme.mutedForeground} />
+              <ThemedText variant="caption" color={theme.mutedForeground}>
+                {route.startPoint} → {route.endPoint}
+              </ThemedText>
+            </View>
+            <View style={styles.routeFooter}>
+              {route.assignedDriverName ? (
+                <View style={styles.driverChip}>
+                  <AvatarBadge initials={route.assignedDriverName.split(' ').map((name) => name[0]).join('')} size={18} />
+                  <ThemedText variant="caption" color={theme.mutedForeground}>{route.assignedDriverName}</ThemedText>
+                </View>
+              ) : (
+                <ThemedText variant="caption" color={theme.mutedForeground}>Unassigned</ThemedText>
+              )}
+              <ThemedText variant="caption" color={theme.mutedForeground}>{route.estimatedMiles} mi</ThemedText>
+            </View>
           </View>
         </View>
-      </View>
+      </Pressable>
       {!isLast ? <Divider inset={52} /> : null}
     </>
   );
@@ -138,8 +161,12 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   content: { paddingHorizontal: 16, paddingTop: 8, gap: 12 },
   filters: { flexDirection: 'row', gap: 8, paddingVertical: 10 },
+  headerAction: { padding: 4 },
+  headerActionPressed: { opacity: 0.6 },
   filterChip: { paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1 },
   list: { overflow: 'hidden' },
+  routePressable: { width: '100%' },
+  routePressablePressed: { opacity: 0.85 },
   routeRow: {
     flexDirection: 'row',
     paddingHorizontal: 16,

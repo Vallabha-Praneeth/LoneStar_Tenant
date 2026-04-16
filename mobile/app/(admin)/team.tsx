@@ -1,5 +1,6 @@
+import { router } from 'expo-router';
 import React from 'react';
-import { Platform, ScrollView, StyleSheet } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AvatarBadge } from '../../components/AvatarBadge';
 import { AppHeader } from '../../components/AppHeader';
@@ -55,15 +56,20 @@ function DriversSection({ drivers }: { drivers: Driver[] }) {
   return (
     <Card padded={false} style={styles.list}>
       {drivers.map((driver, index) => (
-        <ListRow
+        <Pressable
           key={driver.id}
-          title={driver.name}
-          subtitle={`${driver.licenseClass} · ${driver.totalProofs} proofs`}
-          meta={driver.activeCampaigns > 0 ? `${driver.activeCampaigns} active` : undefined}
-          leading={<AvatarBadge initials={driver.avatarInitials} size={36} />}
-          trailing={<Badge label={driver.status} variant={driver.status === 'active' ? 'success' : 'neutral'} />}
-          showDivider={index < drivers.length - 1}
-        />
+          onPress={() => router.push({ pathname: '/(admin)/driver-detail', params: { profileId: driver.id } })}
+          style={({ pressed }) => [styles.driverPressable, pressed ? styles.driverPressablePressed : null]}
+        >
+          <ListRow
+            title={driver.name}
+            subtitle={`${driver.licenseClass} · ${driver.totalProofs} proofs`}
+            meta={driver.activeCampaigns > 0 ? `${driver.activeCampaigns} active` : undefined}
+            leading={<AvatarBadge initials={driver.avatarInitials} size={36} />}
+            trailing={<Badge label={driver.status} variant={driver.status === 'active' ? 'success' : 'neutral'} />}
+            showDivider={index < drivers.length - 1}
+          />
+        </Pressable>
       ))}
     </Card>
   );
@@ -96,4 +102,6 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: 16, paddingTop: 16, gap: 14 },
   list: { overflow: 'hidden' },
   loading: { textAlign: 'center' },
+  driverPressable: { width: '100%' },
+  driverPressablePressed: { opacity: 0.85 },
 });

@@ -33,6 +33,9 @@ export default function AdminLayout() {
       <Tabs.Screen name="routes" options={{ title: 'Routes', tabBarButtonTestID: 'admin-tab-routes', tabBarIcon: ({ color }) => <Feather name="map" size={22} color={color} /> }} />
       <Tabs.Screen name="analytics" options={{ title: 'Reports', tabBarButtonTestID: 'admin-tab-analytics', tabBarIcon: ({ color }) => <Feather name="bar-chart-2" size={22} color={color} /> }} />
       <Tabs.Screen name="campaign-form" options={{ href: null }} />
+      <Tabs.Screen name="route-form" options={{ href: null }} />
+      <Tabs.Screen name="driver-detail" options={{ href: null }} />
+      <Tabs.Screen name="cost-types" options={{ href: null }} />
       <Tabs.Screen name="gallery" options={{ href: null }} />
       <Tabs.Screen name="settings" options={{ href: null }} />
     </Tabs>

@@ -1,6 +1,7 @@
 import { Feather } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import React from 'react';
-import { Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppHeader } from '../../components/AppHeader';
 import { Card } from '../../components/ui/Card';
@@ -85,6 +86,16 @@ export default function AdminAnalyticsScreen() {
     <ThemedView style={styles.root} accessibilityLabel="screen-admin-analytics" testID="screen-admin-analytics">
       <AppHeader title="Reports" />
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: botPad + 80 }]} showsVerticalScrollIndicator={false}>
+        <Pressable
+          onPress={() => router.push('/(admin)/cost-types')}
+          style={({ pressed }) => [styles.costTypesLink, pressed ? styles.costTypesLinkPressed : null]}
+          accessibilityLabel="action-manage-cost-types"
+          testID="action-manage-cost-types"
+        >
+          <Feather name="tag" size={16} color={theme.primary} />
+          <ThemedText variant="label" color={theme.primary}>Manage cost types</ThemedText>
+          <Feather name="chevron-right" size={16} color={theme.primary} />
+        </Pressable>
 
         <View style={styles.metricsGrid}>
           {metrics.map((metric) => (
@@ -184,4 +195,6 @@ const styles = StyleSheet.create({
   campaignMeter: { width: 80, gap: 4 },
   pct: { textAlign: 'right' },
   emptyNote: { textAlign: 'center' },
+  costTypesLink: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
+  costTypesLinkPressed: { opacity: 0.7 },
 });
