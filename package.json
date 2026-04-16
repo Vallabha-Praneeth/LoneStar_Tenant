@@ -5,7 +5,8 @@
   "packageManager": "npm@10.9.0",
   "workspaces": [
     "web",
-    "mobile"
+    "mobile",
+    "appium"
   ],
   "scripts": {
     "dev:web": "npm run dev --workspace web",
@@ -16,7 +17,21 @@
     "android:mobile": "npm run android --workspace mobile",
     "ios:mobile": "npm run ios --workspace mobile",
     "web:mobile": "npm run web --workspace mobile",
+    "build:mobile:ios:preview": "npm run build:ios:preview --workspace mobile",
+    "build:mobile:android:preview": "npm run build:android:preview --workspace mobile",
+    "build:mobile:ios:production": "npm run build:ios:production --workspace mobile",
+    "build:mobile:android:production": "npm run build:android:production --workspace mobile",
+    "build:mobile:ios:development": "npm run build:ios:development --workspace mobile",
+    "build:mobile:android:development": "npm run build:android:development --workspace mobile",
+    "build:mobile:ios:simulator": "npm run build:ios:simulator --workspace mobile",
+    "submit:mobile:ios:production": "npm run submit:ios:production --workspace mobile",
+    "submit:mobile:android:production": "npm run submit:android:production --workspace mobile",
+    "appium:server": "npm run server --workspace appium",
+    "appium:drivers:install": "npm run drivers:install --workspace appium",
+    "test:appium:android": "npm run test:android --workspace appium",
+    "test:appium:ios": "npm run test:ios --workspace appium",
+    "type-check:appium": "npm run type-check --workspace appium",
     "type-check:mobile": "npm run type-check --workspace mobile",
-    "type-check": "npm run type-check:web && npm run type-check:mobile"
+    "type-check": "npm run type-check:web && npm run type-check:mobile && npm run type-check:appium"
   }
 }

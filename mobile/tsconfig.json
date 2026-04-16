@@ -4,5 +4,13 @@
     "strict": true,
     "baseUrl": "."
   },
-  "include": ["App.tsx", "src", "../shared"]
+  "include": [
+    "app",
+    "assets",
+    "components",
+    "constants",
+    "context",
+    "hooks",
+    "../shared"
+  ]
 }

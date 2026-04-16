@@ -1,0 +1,9 @@
+{
+  "server": {
+    "address": "127.0.0.1",
+    "port": 4723,
+    "base-path": "/wd/hub",
+    "log-level": "info",
+    "allow-cors": true
+  }
+}

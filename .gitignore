@@ -10,11 +10,17 @@ coverage/
 .expo-shared/
 android/
 ios/
+mobile/.expo/
+mobile/ios/
+mobile/android/
 
 # env and local config
 .env
 .env.*
 !.env.example
+appium/.appium-home/
+mobile/ios/.xcode.env
+mobile/ios/.xcode.env.local
 
 # logs
 npm-debug.log*
@@ -29,3 +35,10 @@ Thumbs.db
 # Supabase local state
 supabase/.temp/
 supabase/.branches/
+
+# donor / scratch artifacts
+Campaign-Proof-Platform/
+Untitled_tue14.rtf
+.claude-work/
+LoneStar_tenant_Supa.pages
+a1.pdf

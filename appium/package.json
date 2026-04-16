@@ -1,0 +1,23 @@
+{
+  "name": "@lonestar-tenant/appium",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "server": "APPIUM_HOME=./.appium-home appium server --config ./appium.server.json",
+    "drivers:install": "mkdir -p ./.appium-home && APPIUM_HOME=./.appium-home appium driver install uiautomator2@4.2.9 && APPIUM_HOME=./.appium-home appium driver install xcuitest@9.9.6",
+    "test:android": "tsx src/run.ts android smoke",
+    "test:ios": "tsx src/run.ts ios smoke",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "appium": "^2.0.0",
+    "dotenv": "^16.0.0",
+    "tsx": "^4.0.0",
+    "webdriverio": "^8.40.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  }
+}
