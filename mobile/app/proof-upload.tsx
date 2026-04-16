@@ -174,8 +174,11 @@ export default function ProofUploadScreen() {
 
       await refetch();
       router.replace({
-        pathname: '/campaign/[id]',
-        params: { id: selectedCampaign },
+        pathname: '/upload-success',
+        params: {
+          campaignId: selectedCampaign,
+          photoUri: selectedPhoto?.uri ?? '',
+        },
       });
     } catch (uploadError) {
       setPickerError(
