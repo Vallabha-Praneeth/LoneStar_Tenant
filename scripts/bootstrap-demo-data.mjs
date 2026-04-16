@@ -3,11 +3,14 @@ import path from 'node:path';
 
 const repoRoot = process.cwd();
 const mobileEnvPath = path.join(repoRoot, 'mobile', '.env');
-const mobileEnvExamplePath = path.join(repoRoot, 'mobile', '.env.example');
-const DEMO_PASSWORD = 'Demo123!';
+const DEMO_PASSWORD = process.env.DEMO_PASSWORD ?? '';
+
+if (!DEMO_PASSWORD) {
+  throw new Error('Missing DEMO_PASSWORD. Set it in your shell before bootstrapping demo data: DEMO_PASSWORD=... node scripts/bootstrap-demo-data.mjs');
+}
 
 function readEnvValue(key) {
-  const candidates = [mobileEnvPath, mobileEnvExamplePath];
+  const candidates = [mobileEnvPath];
 
   for (const filePath of candidates) {
     if (!fs.existsSync(filePath)) continue;
@@ -109,6 +112,44 @@ const ORGS = {
   },
 };
 
+// Minimal 1×1 gray JPEG used as a placeholder for seeded proof photos.
+// Generated offline; no external dependency needed at seed time.
+const PLACEHOLDER_JPEG_BASE64 =
+  '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8U' +
+  'HRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgN' +
+  'DRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIy' +
+  'MjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAA' +
+  'AAAAAAAAAAAAAAAAAP/EABQBAQAAAAAAAAAAAAAAAAAAAAD/xAAUEQEAAAAAAAAAAAAAAAAA' +
+  'AAAA/9oADAMBAAIRAxEAPwCwABmX/9k=';
+
+const PLACEHOLDER_JPEG = Buffer.from(PLACEHOLDER_JPEG_BASE64, 'base64');
+const CAMPAIGN_PROOFS_BUCKET = 'campaign-proofs';
+
+async function uploadPlaceholderProofs(photos, accessToken) {
+  for (const photo of photos) {
+    const encodedPath = photo.storage_path
+      .split('/')
+      .map((segment) => encodeURIComponent(segment))
+      .join('/');
+    const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${CAMPAIGN_PROOFS_BUCKET}/${encodedPath}`;
+    const response = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'image/jpeg',
+        'x-upsert': 'true',
+      },
+      body: PLACEHOLDER_JPEG,
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Storage upload failed for ${photo.storage_path}: ${response.status} ${body}`);
+    }
+  }
+}
+
 async function requestJson(pathname, init) {
   const response = await fetch(`${SUPABASE_URL}${pathname}`, {
     ...init,
@@ -195,6 +236,7 @@ async function bootstrapOrg(org) {
     organization_id: org.id,
     driver_profile_id: driverProfileId,
   })), accessToken);
+  await uploadPlaceholderProofs(org.photos, accessToken);
   await upsert('campaign_photos', org.photos.map((photo) => ({
     ...photo,
     organization_id: org.id,

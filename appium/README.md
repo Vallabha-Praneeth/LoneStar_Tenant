@@ -41,7 +41,7 @@ You can either:
 
 ## Environment
 
-Copy [appium/.env.example](/Users/praneeth/LoneStar_ERP/LoneStar_Tenant/appium/.env.example) to `appium/.env.local` and adjust values.
+Copy [appium/.env.example](./.env.example) to `appium/.env.local` and adjust values.
 
 Android usually needs:
 
@@ -76,4 +76,4 @@ npm run test:appium:ios
 - The workspace keeps Appium state and installed drivers in `appium/.appium-home` instead of `~/.appium`.
 - The tests create a fresh Appium session per scenario.
 - The current smoke suite assumes mock login remains enabled.
-- If you change accessibility IDs in `mobile/app` or `mobile/components`, update [appium/src/selectors.ts](/Users/praneeth/LoneStar_ERP/LoneStar_Tenant/appium/src/selectors.ts).
+- If you change accessibility IDs in `mobile/app` or `mobile/components`, update [appium/src/selectors.ts](./src/selectors.ts).

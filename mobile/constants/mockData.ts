@@ -560,7 +560,10 @@ export function progressPercent(submitted: number, required: number) {
 }
 
 export function formatDate(date: string) {
-  return new Date(date).toLocaleDateString('en-US', {
+  // Parse date-only strings (YYYY-MM-DD) as local midnight to avoid the UTC-offset
+  // shift that causes new Date("YYYY-MM-DD") to display the previous day in US time zones.
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
   });

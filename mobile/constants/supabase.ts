@@ -42,16 +42,8 @@ export interface CreateCampaignProofUploadInput {
   capturedAt?: string | null;
 }
 
-const env = (
-  globalThis as typeof globalThis & {
-    process?: {
-      env?: Record<string, string | undefined>;
-    };
-  }
-).process?.env ?? {};
-
-const SUPABASE_URL = env.EXPO_PUBLIC_SUPABASE_URL ?? '';
-const SUPABASE_ANON_KEY = env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
+const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 export const CAMPAIGN_PROOFS_BUCKET = 'campaign-proofs';
 export const MAX_PROOF_UPLOAD_BYTES = 15 * 1024 * 1024;
 
@@ -287,12 +279,21 @@ export async function createCampaignProofUpload(
     throw new Error(await readErrorMessage(uploadResponse, 'Unable to upload the proof photo.'));
   }
 
+  // Track whether the DB insert was definitively rejected (non-2xx) so we only
+  // clean up the uploaded storage object when we know the row was never created.
+  // An ambiguous failure (e.g., network drop while reading a 2xx response) leaves
+  // the storage object in place to avoid orphaning a committed row.
+  let insertDefinitelyFailed = false;
+
   try {
-    const inserted = await requestJson<CampaignPhotoRecord[]>(
-      '/rest/v1/campaign_photos?select=id,organization_id,campaign_id,uploaded_by,storage_path,note,submitted_at,captured_at,is_hidden',
+    requireConfig();
+    const insertResponse = await fetch(
+      `${SUPABASE_URL}/rest/v1/campaign_photos?select=id,organization_id,campaign_id,uploaded_by,storage_path,note,submitted_at,captured_at,is_hidden`,
       {
         method: 'POST',
         headers: {
+          apikey: SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
           Authorization: `Bearer ${input.accessToken}`,
           Prefer: 'return=representation',
         },
@@ -309,8 +310,14 @@ export async function createCampaignProofUpload(
           },
         ]),
       },
-      'Unable to record the uploaded proof.',
     );
+
+    if (!insertResponse.ok) {
+      insertDefinitelyFailed = true;
+      throw new Error(await readErrorMessage(insertResponse, 'Unable to record the uploaded proof.'));
+    }
+
+    const inserted = (await insertResponse.json()) as CampaignPhotoRecord[];
 
     if (!inserted[0]) {
       throw new Error('Proof upload completed, but no campaign photo row was returned.');
@@ -318,10 +325,12 @@ export async function createCampaignProofUpload(
 
     return inserted[0];
   } catch (error) {
-    try {
-      await deleteStorageObject(input.accessToken, CAMPAIGN_PROOFS_BUCKET, storagePath);
-    } catch {
-      // Keep the original insert failure as the surfaced error. Orphan cleanup can be retried later.
+    if (insertDefinitelyFailed) {
+      try {
+        await deleteStorageObject(input.accessToken, CAMPAIGN_PROOFS_BUCKET, storagePath);
+      } catch {
+        // Ignore cleanup errors; orphan cleanup can be retried separately.
+      }
     }
 
     throw error;

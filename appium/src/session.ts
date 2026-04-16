@@ -8,10 +8,24 @@ export async function withSession<T>(
 ): Promise<T> {
   const config = buildSessionConfig(platform);
   const driver = await remote(config);
+  let workError: unknown;
 
   try {
     return await work(driver);
+  } catch (err) {
+    workError = err;
+    throw err;
   } finally {
-    await driver.deleteSession();
+    try {
+      await driver.deleteSession();
+    } catch (teardownError) {
+      if (workError !== undefined) {
+        // The original test failure is already being propagated; log the teardown
+        // error so it is not silently lost, but do not let it replace the root cause.
+        console.error('[session] deleteSession also failed after a test error:', teardownError);
+      } else {
+        throw teardownError;
+      }
+    }
   }
 }

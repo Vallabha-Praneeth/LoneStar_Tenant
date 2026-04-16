@@ -66,11 +66,9 @@ export default function AdminRoutesScreen() {
 
         {isLoading ? (
           <ThemedText variant="body" color={theme.mutedForeground}>Loading routes...</ThemedText>
-        ) : null}
-        {error ? (
+        ) : error ? (
           <ThemedText variant="body" color={theme.mutedForeground}>{error}</ThemedText>
-        ) : null}
-        {!isLoading && !error && filtered.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <EmptyState icon="map" title="No routes" message="No routes match this filter." />
         ) : (
           <Card padded={false} style={styles.list}>

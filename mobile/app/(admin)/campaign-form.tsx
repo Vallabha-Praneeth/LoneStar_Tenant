@@ -31,6 +31,17 @@ export default function CampaignFormScreen() {
   const [description, setDescription] = React.useState(existing?.description ?? '');
   const [submitting, setSubmitting] = React.useState(false);
 
+  React.useEffect(() => {
+    const data = id ? getCampaignById(id) : undefined;
+    setName(data?.name ?? '');
+    setSelectedClient(data?.client ?? '');
+    setStartDate(data?.startDate ?? '');
+    setEndDate(data?.endDate ?? '');
+    setRoutes(data?.routes ? String(data.routes) : '');
+    setProofsRequired(data?.proofsRequired ? String(data.proofsRequired) : '');
+    setDescription(data?.description ?? '');
+  }, [id]);
+
   async function handleSubmit() {
     setSubmitting(true);
     await new Promise((resolve) => setTimeout(resolve, 800));

@@ -44,7 +44,7 @@ export default function ClientHomeScreen() {
       />
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: botPad + 80 }]} showsVerticalScrollIndicator={false}>
         <View style={styles.greeting}>
-          <ThemedText variant="heading">{user?.name.split(' ')[0]}</ThemedText>
+          <ThemedText variant="heading">{user?.name?.split(' ')[0]}</ThemedText>
           <ThemedText variant="body" color={theme.mutedForeground}>
             Client view · {tenant?.name}
           </ThemedText>

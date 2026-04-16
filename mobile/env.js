@@ -30,7 +30,13 @@ function requireEnv(name) {
 }
 
 const packageJson = require('./package.json');
-const variant = APP_VARIANTS[appEnv] ?? APP_VARIANTS.development;
+
+if (!Object.prototype.hasOwnProperty.call(APP_VARIANTS, appEnv)) {
+  throw new Error(
+    `Unsupported EXPO_PUBLIC_APP_ENV: "${appEnv}". Expected one of: ${Object.keys(APP_VARIANTS).join(', ')}`
+  );
+}
+const variant = APP_VARIANTS[appEnv];
 
 const Env = {
   appEnv,

@@ -64,10 +64,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     AsyncStorage.getItem(STORAGE_KEY)
       .then((raw) => {
         if (raw) {
-          const session = JSON.parse(raw) as StoredSession;
-          setAccessToken(session.accessToken);
-          setLoginContext(session.loginContext);
-          setBootstrap(session.bootstrap);
+          try {
+            const session = JSON.parse(raw) as StoredSession;
+            setAccessToken(session.accessToken);
+            setLoginContext(session.loginContext);
+            setBootstrap(session.bootstrap);
+          } catch {
+            void AsyncStorage.removeItem(STORAGE_KEY);
+          }
         }
       })
       .finally(() => setIsLoading(false));

@@ -43,11 +43,9 @@ export default function ClientGalleryScreen() {
 
         {isLoading ? (
           <ThemedText variant="body" color={theme.mutedForeground}>Loading proof gallery...</ThemedText>
-        ) : null}
-        {error ? (
+        ) : error ? (
           <ThemedText variant="body" color={theme.mutedForeground}>{error}</ThemedText>
-        ) : null}
-        {!isLoading && !error && filtered.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <EmptyState icon="image" title="No proofs" message="No proof records match this filter." />
         ) : (
           <Card padded={false} style={styles.list}>

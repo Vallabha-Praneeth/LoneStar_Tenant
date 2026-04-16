@@ -45,11 +45,9 @@ export default function DriverHistoryScreen() {
 
         {isLoading ? (
           <ThemedText variant="body" color={theme.mutedForeground}>Loading history...</ThemedText>
-        ) : null}
-        {error ? (
+        ) : error ? (
           <ThemedText variant="body" color={theme.mutedForeground}>{error}</ThemedText>
-        ) : null}
-        {segment === 'shifts' ? (
+        ) : segment === 'shifts' ? (
           shifts.length === 0 ? (
             <EmptyState icon="clock" title="No completed shifts" />
           ) : (
