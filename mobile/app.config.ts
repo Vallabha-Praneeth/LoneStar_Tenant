@@ -16,6 +16,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     policy: 'appVersion',
   },
   updates: {
+    url: Env.easProjectId ? `https://u.expo.dev/${Env.easProjectId}` : undefined,
     fallbackToCacheTimeout: 0,
   },
   experiments: {
@@ -35,6 +36,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ios: {
     supportsTablet: true,
     bundleIdentifier: Env.bundleIdentifier,
+    infoPlist: {
+      ITSAppUsesNonExemptEncryption: false,
+    },
   },
   android: {
     package: Env.packageName,
