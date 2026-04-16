@@ -77,11 +77,11 @@ export default function AdminHomeScreen() {
         </View>
 
         {uploadedProofs > 0 ? (
-          <Pressable onPress={() => router.push('/(admin)/campaigns')} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
+          <Pressable onPress={() => router.push('/(admin)/gallery')} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
             <Card style={styles.alertBanner}>
               <Feather name="image" size={16} color={theme.accent} />
               <ThemedText variant="label" style={styles.alertText}>
-                {uploadedProofs} uploaded proof{uploadedProofs !== 1 ? 's' : ''} visible in the app
+                {uploadedProofs} uploaded proof{uploadedProofs !== 1 ? 's' : ''} — tap to view gallery
               </ThemedText>
               <Feather name="chevron-right" size={14} color={theme.mutedForeground} />
             </Card>

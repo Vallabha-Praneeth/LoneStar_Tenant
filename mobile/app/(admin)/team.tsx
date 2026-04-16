@@ -8,15 +8,12 @@ import { Card } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ListRow } from '../../components/ui/ListRow';
 import { SegmentedControl } from '../../components/ui/SegmentedControl';
+import { ThemedText } from '../../components/ui/ThemedText';
 import { ThemedView } from '../../components/ui/ThemedView';
-import {
-  type Client,
-  type Driver,
-  getClientsForTenant,
-  getDriversForTenant,
-} from '../../constants/mockData';
+import type { Client, Driver } from '../../constants/mockData';
 import colors from '../../constants/colors';
 import { useTenant } from '../../context/TenantContext';
+import { useTenantOperationalData } from '../../hooks/useTenantOperationalData';
 
 type Segment = 'drivers' | 'clients';
 
@@ -25,13 +22,17 @@ export default function AdminTeamScreen() {
   const insets = useSafeAreaInsets();
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
   const [segment, setSegment] = React.useState<Segment>('drivers');
-  const drivers = tenant ? getDriversForTenant(tenant.id) : [];
-  const clients = tenant ? getClientsForTenant(tenant.id) : [];
+  const { drivers, clients, isLoading } = useTenantOperationalData();
+
+  const theme = tenant?.theme ?? colors.light;
 
   return (
     <ThemedView style={styles.root} accessibilityLabel="screen-admin-team" testID="screen-admin-team">
       <AppHeader title="Team" />
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: botPad + 80 }]} showsVerticalScrollIndicator={false}>
+        {isLoading ? (
+          <ThemedText variant="body" color={theme.mutedForeground} style={styles.loading}>Loading team…</ThemedText>
+        ) : null}
         <SegmentedControl
           segments={[
             { key: 'drivers', label: `Drivers (${drivers.length})` },
@@ -94,4 +95,5 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   content: { paddingHorizontal: 16, paddingTop: 16, gap: 14 },
   list: { overflow: 'hidden' },
+  loading: { textAlign: 'center' },
 });
