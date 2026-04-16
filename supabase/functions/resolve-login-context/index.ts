@@ -1,3 +1,8 @@
+// DEPRECATED: This function is no longer called by the mobile login flow.
+// Login now uses signInWithPassword → bootstrap-tenant-session directly.
+// This function is retained for future use (SSO, magic-link, deep-link pre-resolution).
+// Do not delete until a replacement pattern is established.
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {

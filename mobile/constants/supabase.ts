@@ -198,6 +198,11 @@ export function getCampaignProofImageSource(accessToken: string, storagePath: st
   };
 }
 
+/**
+ * @deprecated No longer used in the login flow.
+ * Login now goes: signInWithPassword → bootstrapTenantSession.
+ * Kept for reference only until SSO/magic-link needs are decided.
+ */
 export async function resolveLoginContext(
   request: ResolveLoginContextRequest,
 ): Promise<ResolveLoginContextResponse> {
