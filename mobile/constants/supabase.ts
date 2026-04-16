@@ -244,6 +244,27 @@ export async function bootstrapTenantSession(
   );
 }
 
+export async function createOrganization(input: {
+  orgName: string;
+  adminName: string;
+  email: string;
+  password: string;
+}): Promise<void> {
+  requireConfig();
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/create-organization`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, 'Could not create organization.'));
+  }
+}
+
 export async function createCampaignProofUpload(
   input: CreateCampaignProofUploadInput,
 ): Promise<CampaignPhotoRecord> {
