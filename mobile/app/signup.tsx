@@ -12,7 +12,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '../components/ui/ThemedText';
 import { Button } from '../components/ui/Button';
 import { createOrganization } from '../constants/supabase';
-import { bootstrapTenantSession } from '../constants/supabase';
 import { useAuth } from '../context/AuthContext';
 
 export default function SignupScreen() {
