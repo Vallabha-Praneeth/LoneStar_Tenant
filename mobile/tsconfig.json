@@ -11,6 +11,8 @@
     "constants",
     "context",
     "hooks",
-    "../shared"
+    "../shared",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
   ]
 }
