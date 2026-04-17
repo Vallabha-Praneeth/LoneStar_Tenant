@@ -38,6 +38,7 @@ export default function AdminLayout() {
       <Tabs.Screen name="cost-types" options={{ href: null }} />
       <Tabs.Screen name="gallery" options={{ href: null }} />
       <Tabs.Screen name="settings" options={{ href: null }} />
+      <Tabs.Screen name="create-user" options={{ href: null }} />
     </Tabs>
   );
 }

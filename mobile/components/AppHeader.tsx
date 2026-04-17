@@ -79,8 +79,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   right: {
-    width: 36,
+    minWidth: 36,
     alignItems: 'flex-end',
+    flexShrink: 0,
   },
   back: {
     padding: 4,

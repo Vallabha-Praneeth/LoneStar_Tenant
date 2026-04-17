@@ -272,6 +272,42 @@ export async function createOrganization(input: {
   }
 }
 
+export interface CreateTenantUserInput {
+  accessToken: string;
+  organizationId: string;
+  role: 'driver' | 'client';
+  username: string;
+  displayName: string;
+  password: string;
+  email?: string;
+  clientId?: string;
+}
+
+export async function createTenantUser(input: CreateTenantUserInput): Promise<void> {
+  requireConfig();
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/create-tenant-user`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${input.accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      organization_id: input.organizationId,
+      role: input.role,
+      username: input.username,
+      display_name: input.displayName,
+      password: input.password,
+      email: input.email,
+      client_id: input.clientId,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, 'Could not create user.'));
+  }
+}
+
 export async function createCampaignProofUpload(
   input: CreateCampaignProofUploadInput,
 ): Promise<CampaignPhotoRecord> {
