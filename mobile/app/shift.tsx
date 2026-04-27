@@ -1,5 +1,6 @@
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import React from 'react';
 import {
   Platform,
@@ -37,14 +38,19 @@ export default function ShiftScreen() {
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
   const theme = tenant?.theme ?? colors.light;
   const radius = tenant?.radius ?? 8;
-  const { visibleShifts, visibleCampaigns, isLoading, error } = useTenantOperationalData();
+  const { visibleShifts, visibleCampaigns, isLoading, error, refetch } = useTenantOperationalData();
   const activeShift = visibleShifts.find((shift) => shift.status === 'active');
   const completedShifts = user ? visibleShifts.filter((shift) => shift.driverId === user.id && shift.status === 'completed') : [];
   const campaigns = visibleCampaigns.filter((campaign) => campaign.status === 'active');
   const [odometer, setOdometer] = React.useState('');
   const [selectedCampaign, setSelectedCampaign] = React.useState(campaigns[0]?.id ?? '');
-  const [shiftEnded, setShiftEnded] = React.useState(false);
   const [actionError, setActionError] = React.useState<string | null>(null);
+  useFocusEffect(
+    React.useCallback(() => {
+      refetch();
+    }, [refetch]),
+  );
+
   const [isStartingShift, setIsStartingShift] = React.useState(false);
   const [isEndingShift, setIsEndingShift] = React.useState(false);
   const organizationId = bootstrap?.organization?.id ?? null;
@@ -77,6 +83,10 @@ export default function ShiftScreen() {
       setActionError('Select a campaign before starting a shift.');
       return;
     }
+    if (!campaigns.some((campaign) => campaign.id === selectedCampaign)) {
+      setActionError('Selected campaign is no longer valid. Please choose an assigned active campaign.');
+      return;
+    }
 
     setActionError(null);
     setIsStartingShift(true);
@@ -103,6 +113,7 @@ export default function ShiftScreen() {
       }
 
       clearTenantOperationalDataCache();
+      await refetch();
       router.back();
     } catch (startError) {
       setActionError(startError instanceof Error ? startError.message : 'Could not start shift.');
@@ -121,7 +132,7 @@ export default function ShiftScreen() {
     setIsEndingShift(true);
     try {
       const response = await fetch(
-        `${SUPABASE_REST_URL}/driver_shifts?id=eq.${activeShift.id}&organization_id=eq.${organizationId}`,
+        `${SUPABASE_REST_URL}/driver_shifts?id=eq.${activeShift.id}&organization_id=eq.${organizationId}&shift_status=eq.active&ended_at=is.null`,
         {
           method: 'PATCH',
           headers: {
@@ -142,7 +153,7 @@ export default function ShiftScreen() {
       }
 
       clearTenantOperationalDataCache();
-      setShiftEnded(true);
+      await refetch();
     } catch (endError) {
       setActionError(endError instanceof Error ? endError.message : 'Could not end shift.');
     } finally {
@@ -168,7 +179,6 @@ export default function ShiftScreen() {
             radius={radius}
             odometer={odometer}
             setOdometer={setOdometer}
-            shiftEnded={shiftEnded}
             onEndShift={() => void handleEndShift()}
             isEndingShift={isEndingShift}
             actionError={actionError}
@@ -221,7 +231,6 @@ function ActiveShiftSection({
   radius,
   odometer,
   setOdometer,
-  shiftEnded,
   onEndShift,
   isEndingShift,
   actionError,
@@ -231,7 +240,6 @@ function ActiveShiftSection({
   radius: number;
   odometer: string;
   setOdometer: (value: string) => void;
-  shiftEnded: boolean;
   onEndShift: () => void;
   isEndingShift: boolean;
   actionError: string | null;
@@ -263,41 +271,31 @@ function ActiveShiftSection({
         ) : null}
       </View>
 
-      {!shiftEnded ? (
-        <>
-          <View style={styles.fieldGroup}>
-            <ThemedText variant="label" color={theme.mutedForeground}>End Odometer (mi)</ThemedText>
-            <View style={[styles.inputWrap, { borderColor: theme.border, borderRadius: radius, backgroundColor: theme.card }]}>
-              <TextInput
-                style={[styles.input, { color: theme.foreground }]}
-                value={odometer}
-                onChangeText={setOdometer}
-                placeholder="Enter current odometer"
-                placeholderTextColor={theme.mutedForeground}
-                keyboardType="number-pad"
-              />
-            </View>
-          </View>
-          <Button
-            label={isEndingShift ? 'Ending Shift...' : 'End Shift'}
-            variant="destructive"
-            onPress={onEndShift}
-            disabled={!odometer || isEndingShift}
-            loading={isEndingShift}
+      <View style={styles.fieldGroup}>
+        <ThemedText variant="label" color={theme.mutedForeground}>End Odometer (mi)</ThemedText>
+        <View style={[styles.inputWrap, { borderColor: theme.border, borderRadius: radius, backgroundColor: theme.card }]}>
+          <TextInput
+            style={[styles.input, { color: theme.foreground }]}
+            value={odometer}
+            onChangeText={setOdometer}
+            placeholder="Enter current odometer"
+            placeholderTextColor={theme.mutedForeground}
+            keyboardType="number-pad"
           />
-          {actionError ? (
-            <ThemedText variant="caption" color={theme.mutedForeground}>
-              {actionError}
-            </ThemedText>
-          ) : null}
-        </>
-      ) : (
-        <View style={styles.ended}>
-          <Feather name="check-circle" size={28} color="#166534" />
-          <ThemedText variant="subheading" color="#166534">Shift ended</ThemedText>
-          <ThemedText variant="caption" color={theme.mutedForeground}>PLACEHOLDER · Not persisted</ThemedText>
         </View>
-      )}
+      </View>
+      <Button
+        label={isEndingShift ? 'Ending Shift...' : 'End Shift'}
+        variant="destructive"
+        onPress={onEndShift}
+        disabled={!odometer || isEndingShift}
+        loading={isEndingShift}
+      />
+      {actionError ? (
+        <ThemedText variant="caption" color={theme.mutedForeground}>
+          {actionError}
+        </ThemedText>
+      ) : null}
     </Card>
   );
 }

@@ -29,6 +29,25 @@ export interface CampaignPhotoRecord {
   is_hidden: boolean;
 }
 
+export interface OrganizationBrandingRecord {
+  id: string;
+  organization_id: string;
+  logo_url: string | null;
+  primary_color: string;
+}
+
+export interface SuperAdminInviteRecord {
+  id: string;
+  code: string;
+  note: string | null;
+  status: 'active' | 'used' | 'expired';
+  expires_at: string;
+  used_at: string | null;
+  used_by_org_id: string | null;
+  used_by_org_name: string | null;
+  created_at: string;
+}
+
 export interface CreateCampaignProofUploadInput {
   accessToken: string;
   organizationId: string;
@@ -42,12 +61,21 @@ export interface CreateCampaignProofUploadInput {
   capturedAt?: string | null;
 }
 
+export interface CreateClientEntityInput {
+  accessToken: string;
+  organizationId: string;
+  name: string;
+  phoneNumber?: string | null;
+}
+
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 export const SUPABASE_REST_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL ?? ''}/rest/v1`;
 export const SUPABASE_ANON_KEY_VALUE = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 export const CAMPAIGN_PROOFS_BUCKET = 'campaign-proofs';
+export const BRANDING_LOGOS_BUCKET = 'branding-logos';
 export const MAX_PROOF_UPLOAD_BYTES = 15 * 1024 * 1024;
+export const MAX_BRANDING_LOGO_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 function requireConfig() {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
@@ -136,6 +164,10 @@ function deriveProofExtension(fileName?: string | null, mimeType?: string | null
   return fromUri ?? 'jpg';
 }
 
+function deriveBrandingLogoExtension(fileName?: string | null, mimeType?: string | null, logoUri?: string) {
+  return deriveProofExtension(fileName, mimeType, logoUri);
+}
+
 async function deleteStorageObject(accessToken: string, bucket: string, storagePath: string) {
   const response = await fetch(createObjectUrl(bucket, storagePath, 'object'), {
     method: 'DELETE',
@@ -200,6 +232,16 @@ export function getCampaignProofImageSource(accessToken: string, storagePath: st
   };
 }
 
+export function getBrandingLogoImageSource(accessToken: string, storagePath: string) {
+  return {
+    uri: createObjectUrl(BRANDING_LOGOS_BUCKET, storagePath, 'object/authenticated'),
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      apikey: SUPABASE_ANON_KEY,
+    },
+  };
+}
+
 /**
  * @deprecated No longer used in the login flow.
  * Login now goes: signInWithPassword → bootstrapTenantSession.
@@ -256,6 +298,7 @@ export async function createOrganization(input: {
   adminName: string;
   email: string;
   password: string;
+  inviteCode: string;
 }): Promise<void> {
   requireConfig();
   const response = await fetch(`${SUPABASE_URL}/functions/v1/create-organization`, {
@@ -272,6 +315,104 @@ export async function createOrganization(input: {
   }
 }
 
+export async function createClientEntity(input: CreateClientEntityInput): Promise<void> {
+  requireConfig();
+  const response = await fetch(`${SUPABASE_REST_URL}/clients`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${input.accessToken}`,
+      apikey: SUPABASE_ANON_KEY_VALUE,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
+    },
+    body: JSON.stringify({
+      organization_id: input.organizationId,
+      name: input.name.trim(),
+      phone_number: input.phoneNumber?.trim() || null,
+      is_active: true,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, 'Could not create client entity.'));
+  }
+}
+
+interface ListInviteCodesResponse {
+  invites: SuperAdminInviteRecord[];
+}
+
+interface InviteMutationResponse {
+  invite: Pick<SuperAdminInviteRecord, 'id' | 'code' | 'expires_at' | 'used_at'>;
+}
+
+export async function listInviteCodes(accessToken: string): Promise<SuperAdminInviteRecord[]> {
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/list-invite-codes`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      apikey: SUPABASE_ANON_KEY,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, 'Could not list invite codes.'));
+  }
+
+  const body = (await response.json()) as ListInviteCodesResponse;
+  return body.invites ?? [];
+}
+
+export async function sendInviteCode(input: {
+  accessToken: string;
+  note?: string;
+  expiresInDays?: number;
+}): Promise<Pick<SuperAdminInviteRecord, 'id' | 'code' | 'expires_at' | 'used_at'>> {
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/send-invite-code`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${input.accessToken}`,
+      apikey: SUPABASE_ANON_KEY,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      note: input.note ?? null,
+      expires_in_days: input.expiresInDays,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, 'Could not send invite code.'));
+  }
+
+  const body = (await response.json()) as InviteMutationResponse;
+  return body.invite;
+}
+
+export async function resendInviteCode(input: {
+  accessToken: string;
+  inviteId: string;
+}): Promise<Pick<SuperAdminInviteRecord, 'id' | 'code' | 'expires_at' | 'used_at'>> {
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/resend-invite-code`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${input.accessToken}`,
+      apikey: SUPABASE_ANON_KEY,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      invite_id: input.inviteId,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, 'Could not resend invite code.'));
+  }
+
+  const body = (await response.json()) as InviteMutationResponse;
+  return body.invite;
+}
+
 export interface CreateTenantUserInput {
   accessToken: string;
   organizationId: string;
@@ -281,6 +422,21 @@ export interface CreateTenantUserInput {
   password: string;
   email?: string;
   clientId?: string;
+}
+
+export interface UpdateOrganizationBrandingInput {
+  accessToken: string;
+  organizationId: string;
+  logoUrl?: string | null;
+  primaryColor?: string;
+}
+
+export interface UploadOrganizationBrandingLogoInput {
+  accessToken: string;
+  organizationId: string;
+  logoUri: string;
+  fileName?: string | null;
+  mimeType?: string | null;
 }
 
 export async function createTenantUser(input: CreateTenantUserInput): Promise<void> {
@@ -305,6 +461,103 @@ export async function createTenantUser(input: CreateTenantUserInput): Promise<vo
 
   if (!response.ok) {
     throw new Error(await readErrorMessage(response, 'Could not create user.'));
+  }
+}
+
+export async function updateOrganizationBranding(
+  input: UpdateOrganizationBrandingInput,
+): Promise<OrganizationBrandingRecord> {
+  requireConfig();
+
+  if (input.logoUrl === undefined && input.primaryColor === undefined) {
+    throw new Error('No branding updates were provided.');
+  }
+
+  const payload: Record<string, string | null> = {};
+  if (input.logoUrl !== undefined) {
+    payload.logo_url = input.logoUrl;
+  }
+  if (input.primaryColor !== undefined) {
+    payload.primary_color = input.primaryColor;
+  }
+
+  const response = await fetch(
+    `${SUPABASE_URL}/rest/v1/organization_branding?organization_id=eq.${input.organizationId}&select=id,organization_id,logo_url,primary_color`,
+    {
+      method: 'PATCH',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${input.accessToken}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, 'Unable to update branding settings.'));
+  }
+
+  const rows = (await response.json()) as OrganizationBrandingRecord[];
+  if (!rows[0]) {
+    throw new Error('Branding update succeeded but no row was returned.');
+  }
+  return rows[0];
+}
+
+export async function uploadOrganizationBrandingLogo(
+  input: UploadOrganizationBrandingLogoInput,
+): Promise<OrganizationBrandingRecord> {
+  requireConfig();
+
+  const sourceResponse = await fetch(input.logoUri);
+  if (!sourceResponse.ok) {
+    throw new Error('Unable to read the selected logo image.');
+  }
+
+  const payload = await sourceResponse.blob();
+  if (payload.size > MAX_BRANDING_LOGO_UPLOAD_BYTES) {
+    throw new Error('Selected logo is too large. Keep uploads under 5 MB.');
+  }
+
+  const extension = deriveBrandingLogoExtension(input.fileName, input.mimeType, input.logoUri);
+  const storagePath = `${input.organizationId}/branding/logo-${createPhotoId()}.${extension}`;
+  const contentType = input.mimeType || payload.type || 'image/jpeg';
+
+  const uploadResponse = await fetch(createObjectUrl(BRANDING_LOGOS_BUCKET, storagePath, 'object'), {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${input.accessToken}`,
+      apikey: SUPABASE_ANON_KEY,
+      'Content-Type': contentType,
+      'x-upsert': 'false',
+    },
+    body: payload,
+  });
+
+  if (!uploadResponse.ok) {
+    throw new Error(await readErrorMessage(uploadResponse, 'Unable to upload logo image.'));
+  }
+
+  let updateDefinitelyFailed = false;
+  try {
+    return await updateOrganizationBranding({
+      accessToken: input.accessToken,
+      organizationId: input.organizationId,
+      logoUrl: storagePath,
+    });
+  } catch (error) {
+    updateDefinitelyFailed = true;
+    throw error;
+  } finally {
+    if (updateDefinitelyFailed) {
+      try {
+        await deleteStorageObject(input.accessToken, BRANDING_LOGOS_BUCKET, storagePath);
+      } catch {
+        // Ignore cleanup errors; orphan cleanup can be retried separately.
+      }
+    }
   }
 }
 

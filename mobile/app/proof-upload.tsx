@@ -1,4 +1,5 @@
 import { Feather } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import React from 'react';
@@ -74,6 +75,12 @@ export default function ProofUploadScreen() {
       setSelectedCampaign(campaigns[0]?.id ?? '');
     }
   }, [campaigns, preferredCampaignId, selectedCampaign]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      refetch();
+    }, [refetch]),
+  );
 
   const applyPickerResult = React.useCallback((result: ImagePicker.ImagePickerResult) => {
     if (result.canceled) {
@@ -155,6 +162,10 @@ export default function ProofUploadScreen() {
       setPickerError('Add a proof location before submitting.');
       return;
     }
+    if (!campaigns.some((campaign) => campaign.id === selectedCampaign)) {
+      setPickerError('Selected campaign is no longer valid. Please choose an assigned active campaign.');
+      return;
+    }
 
     setIsSubmitting(true);
     setPickerError(null);
@@ -192,6 +203,7 @@ export default function ProofUploadScreen() {
     bootstrap,
     location,
     notes,
+    campaigns,
     refetch,
     selectedCampaign,
     selectedPhoto,

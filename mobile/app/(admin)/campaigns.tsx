@@ -1,5 +1,6 @@
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import React from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,8 +30,14 @@ export default function AdminCampaignsScreen() {
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
   const theme = tenant?.theme ?? colors.light;
   const [filter, setFilter] = React.useState<Filter>('all');
-  const { campaigns: all, isLoading, error } = useTenantOperationalData();
+  const { campaigns: all, isLoading, error, refetch } = useTenantOperationalData();
   const filtered = filter === 'all' ? all : all.filter((campaign) => campaign.status === filter);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      refetch();
+    }, [refetch]),
+  );
 
   return (
     <ThemedView style={styles.root} accessibilityLabel="screen-admin-campaigns" testID="screen-admin-campaigns">

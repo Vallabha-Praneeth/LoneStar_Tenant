@@ -17,6 +17,7 @@ export interface MockUser {
 
 export interface Campaign {
   id: string;
+  routeId?: string | null;
   clientId?: string | null;
   name: string;
   client: string;

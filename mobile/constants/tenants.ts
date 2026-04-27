@@ -16,6 +16,7 @@ export interface TenantConfig {
   name: string;
   tagline: string;
   logoInitials: string;
+  logoUrl: string;
   theme: TenantTheme;
   fontFamily: string;
   radius: number;
@@ -27,6 +28,7 @@ export interface OrgBranding {
   name: string;
   tagline: string;
   logoInitials: string;
+  logoUrl: string;
   theme: TenantTheme;
   radius: number;
 }

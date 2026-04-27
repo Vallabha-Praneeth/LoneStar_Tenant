@@ -11,14 +11,15 @@ interface TenantContextValue {
 const TenantContext = React.createContext<TenantContextValue | null>(null);
 
 export function TenantProvider({ children }: { children: React.ReactNode }) {
-  const { orgBranding, isLoading, signOut } = useAuth();
+  const { orgBranding, bootstrap, isLoading, signOut } = useAuth();
 
   const tenant: TenantConfig | null = orgBranding
     ? {
-        id: 'dynamic' as any,
+        id: bootstrap?.organization.id ?? 'dynamic',
         name: orgBranding.name,
         tagline: orgBranding.tagline,
         logoInitials: orgBranding.logoInitials,
+        logoUrl: orgBranding.logoUrl,
         theme: orgBranding.theme,
         fontFamily: 'Inter_600SemiBold',
         radius: orgBranding.radius,

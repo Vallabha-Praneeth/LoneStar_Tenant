@@ -110,6 +110,7 @@ export default function AdminHomeScreen() {
             <QuickLink label="New Campaign" icon="plus-circle" testID="admin-quick-campaign-form" onPress={() => router.push('/(admin)/campaign-form')} />
             <QuickLink label="Drivers" icon="truck" testID="admin-quick-team" onPress={() => router.push('/(admin)/team')} />
             <QuickLink label="Routes" icon="map" testID="admin-quick-routes" onPress={() => router.push('/(admin)/routes')} />
+            <QuickLink label="Branding" icon="settings" testID="admin-quick-settings" onPress={() => router.push('/(admin)/settings')} />
             <QuickLink label="Reports" icon="bar-chart-2" testID="admin-quick-analytics" onPress={() => router.push('/(admin)/analytics')} />
           </View>
         </View>

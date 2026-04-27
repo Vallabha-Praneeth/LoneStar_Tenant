@@ -1,5 +1,5 @@
 import { Feather } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import React from 'react';
 import {
   Pressable,
@@ -117,6 +117,15 @@ export default function LoginScreen() {
             testID="action-go-to-signup"
           >
             <ThemedText variant="caption" color="#1B3A5C">New here? Create your organization →</ThemedText>
+          </Pressable>
+
+          <Pressable
+            onPress={() => router.push('/super-admin' as Href)}
+            style={({ pressed }) => [styles.signupLink, { opacity: pressed ? 0.6 : 1 }]}
+            accessibilityLabel="action-go-to-super-admin"
+            testID="action-go-to-super-admin"
+          >
+            <ThemedText variant="caption" color="#94A3B8">Super-admin</ThemedText>
           </Pressable>
         </View>
       </ScrollView>

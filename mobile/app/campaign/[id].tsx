@@ -1,5 +1,6 @@
 import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import React from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -40,10 +41,18 @@ export default function CampaignDetailScreen() {
   const insets = useSafeAreaInsets();
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
   const theme = tenant?.theme ?? colors.light;
-  const { campaigns, visibleCampaigns, proofs: allProofs, routes: allRoutes, isLoading, error } = useTenantOperationalData();
+  const { campaigns, visibleCampaigns, proofs: allProofs, routes: allRoutes, isLoading, error, refetch } = useTenantOperationalData();
   const campaign = visibleCampaigns.find((candidate) => candidate.id === id) ?? campaigns.find((candidate) => candidate.id === id);
   const proofs = campaign ? allProofs.filter((proof) => proof.campaignId === campaign.id) : [];
-  const routes = campaign ? allRoutes.filter((route) => route.campaignId === campaign.id) : [];
+  const routes = campaign?.routeId
+    ? allRoutes.filter((route) => route.id === campaign.routeId)
+    : [];
+
+  useFocusEffect(
+    React.useCallback(() => {
+      refetch();
+    }, [refetch]),
+  );
 
   if (!campaign && !isLoading) {
     return (

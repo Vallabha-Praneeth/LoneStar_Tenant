@@ -1,4 +1,5 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, type Href, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import React from 'react';
 import {
   Alert,
@@ -31,6 +32,10 @@ interface ClientRow {
   name: string;
 }
 
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
 function createStyles(theme: TenantTheme, radius: number) {
   return StyleSheet.create({
     root: { flex: 1 },
@@ -60,6 +65,7 @@ function createStyles(theme: TenantTheme, radius: number) {
       backgroundColor: theme.primary + '18',
     },
     emptyClients: { paddingVertical: 8 },
+    addClientLink: { paddingVertical: 6, alignSelf: 'flex-start' },
     submitWrap: { marginTop: 8 },
   });
 }
@@ -73,7 +79,6 @@ export default function CreateUserScreen() {
   const radius = tenant?.radius ?? 8;
   const styles = React.useMemo(() => createStyles(theme, radius), [theme, radius]);
 
-  const [username, setUsername] = React.useState('');
   const [displayName, setDisplayName] = React.useState('');
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
@@ -85,33 +90,46 @@ export default function CreateUserScreen() {
   const isDriver = role === 'driver';
   const title = isDriver ? 'Add Driver' : 'Add Client User';
 
-  React.useEffect(() => {
-    if (!isDriver && accessToken && orgId) {
-      fetch(
-        `${SUPABASE_REST_URL}/clients?organization_id=eq.${orgId}&is_active=eq.true&select=id,name&order=name.asc`,
-        {
-          headers: {
-            apikey: SUPABASE_ANON_KEY_VALUE,
-            Authorization: `Bearer ${accessToken}`,
-          },
-        },
-      )
-        .then((r) => r.json())
-        .then((rows: ClientRow[]) => setClients(rows))
-        .catch(() => {});
+  const loadClients = React.useCallback(() => {
+    if (isDriver || !accessToken || !orgId) {
+      return;
     }
+
+    fetch(
+      `${SUPABASE_REST_URL}/clients?organization_id=eq.${orgId}&is_active=eq.true&select=id,name&order=name.asc`,
+      {
+        headers: {
+          apikey: SUPABASE_ANON_KEY_VALUE,
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
+    )
+      .then((r) => r.json())
+      .then((rows: ClientRow[]) => setClients(rows))
+      .catch(() => {});
   }, [isDriver, accessToken, orgId]);
+
+  React.useEffect(() => {
+    loadClients();
+  }, [loadClients]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadClients();
+    }, [loadClients]),
+  );
 
   async function handleSubmit() {
     if (!accessToken || !orgId) return;
 
     const trimmedName = displayName.trim();
-    const trimmedUsername = isDriver ? username.trim() : email.trim();
+    const trimmedEmail = email.trim().toLowerCase();
 
     if (!trimmedName) return Alert.alert('Validation', 'Display name is required');
-    if (!trimmedUsername) return Alert.alert('Validation', isDriver ? 'Username is required' : 'Email is required');
+    if (!trimmedEmail) return Alert.alert('Validation', 'Email is required');
+    if (!isValidEmail(trimmedEmail)) return Alert.alert('Validation', 'Enter a valid email address');
     if (password.length < 6) return Alert.alert('Validation', 'Password must be at least 6 characters');
-    if (!isDriver && !clientId) return Alert.alert('Validation', 'Please select a client organization');
+    if (!isDriver && !clientId) return Alert.alert('Validation', 'Please select a client entity');
 
     setSubmitting(true);
     try {
@@ -119,10 +137,10 @@ export default function CreateUserScreen() {
         accessToken,
         organizationId: orgId,
         role: isDriver ? 'driver' : 'client',
-        username: trimmedUsername,
+        username: trimmedEmail,
         displayName: trimmedName,
         password,
-        email: isDriver ? undefined : email.trim(),
+        email: trimmedEmail,
         clientId: isDriver ? undefined : clientId,
       });
       clearTenantOperationalDataCache();
@@ -147,38 +165,21 @@ export default function CreateUserScreen() {
           contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]}
           keyboardShouldPersistTaps="handled"
         >
-          {isDriver ? (
-            <View style={styles.field}>
-              <ThemedText variant="caption" color={theme.mutedForeground}>Username *</ThemedText>
-              <View style={styles.inputWrap}>
-                <TextInput
-                  style={styles.input}
-                  value={username}
-                  onChangeText={setUsername}
-                  placeholder="e.g. driver_john"
-                  placeholderTextColor={theme.mutedForeground}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-              </View>
+          <View style={styles.field}>
+            <ThemedText variant="caption" color={theme.mutedForeground}>Email *</ThemedText>
+            <View style={styles.inputWrap}>
+              <TextInput
+                style={styles.input}
+                value={email}
+                onChangeText={setEmail}
+                placeholder={isDriver ? 'e.g. driver@yourcompany.com' : 'e.g. client.user@acme.com'}
+                placeholderTextColor={theme.mutedForeground}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+              />
             </View>
-          ) : (
-            <View style={styles.field}>
-              <ThemedText variant="caption" color={theme.mutedForeground}>Email *</ThemedText>
-              <View style={styles.inputWrap}>
-                <TextInput
-                  style={styles.input}
-                  value={email}
-                  onChangeText={setEmail}
-                  placeholder="e.g. jane@acme.com"
-                  placeholderTextColor={theme.mutedForeground}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="email-address"
-                />
-              </View>
-            </View>
-          )}
+          </View>
 
           <View style={styles.field}>
             <ThemedText variant="caption" color={theme.mutedForeground}>Display Name *</ThemedText>
@@ -212,9 +213,17 @@ export default function CreateUserScreen() {
             <View style={styles.field}>
               <ThemedText variant="caption" color={theme.mutedForeground}>Client Organization *</ThemedText>
               {clients.length === 0 ? (
-                <ThemedText variant="caption" color={theme.mutedForeground} style={styles.emptyClients}>
-                  No active clients — add clients first
-                </ThemedText>
+                <>
+                  <ThemedText variant="caption" color={theme.mutedForeground} style={styles.emptyClients}>
+                    No active clients — create a client entity first.
+                  </ThemedText>
+                  <Pressable
+                    onPress={() => router.push('/(admin)/client-form' as Href)}
+                    style={({ pressed }) => [styles.addClientLink, { opacity: pressed ? 0.7 : 1 }]}
+                  >
+                    <ThemedText variant="caption" color={theme.primary}>+ Create client entity</ThemedText>
+                  </Pressable>
+                </>
               ) : (
                 <View style={styles.clientGrid}>
                   {clients.map((c) => (

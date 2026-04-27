@@ -87,7 +87,7 @@ export interface CreateTenantUserRequest extends TenantScopedRequest {
   username: string;
   displayName: string;
   password: string;
-  email?: string;
+  email: string;
   clientId?: string;
 }
 

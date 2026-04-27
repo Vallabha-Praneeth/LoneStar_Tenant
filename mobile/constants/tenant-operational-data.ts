@@ -239,13 +239,22 @@ function buildScopedView(
     visibleCampaigns = data.campaigns.filter((campaign) => campaign.assignedDriverIds.includes(user.id));
     visibleProofs = data.proofs.filter((proof) => proof.driverId === user.id);
     visibleShifts = data.shifts.filter((shift) => shift.driverId === user.id);
-    const allowedCampaignIds = new Set(visibleCampaigns.map((campaign) => campaign.id));
-    visibleRoutes = data.routes.filter((route) => allowedCampaignIds.has(route.campaignId));
+    const allowedRouteIds = new Set(
+      visibleCampaigns
+        .map((campaign) => campaign.routeId)
+        .filter((routeId): routeId is string => Boolean(routeId)),
+    );
+    visibleRoutes = data.routes.filter((route) => allowedRouteIds.has(route.id));
   } else if (user.role === 'client' && clientId) {
     visibleCampaigns = data.campaigns.filter((campaign) => campaign.clientId === clientId);
     const allowedCampaignIds = new Set(visibleCampaigns.map((campaign) => campaign.id));
+    const allowedRouteIds = new Set(
+      visibleCampaigns
+        .map((campaign) => campaign.routeId)
+        .filter((routeId): routeId is string => Boolean(routeId)),
+    );
     visibleProofs = data.proofs.filter((proof) => allowedCampaignIds.has(proof.campaignId));
-    visibleRoutes = data.routes.filter((route) => allowedCampaignIds.has(route.campaignId));
+    visibleRoutes = data.routes.filter((route) => allowedRouteIds.has(route.id));
     visibleShifts = [];
   }
 
@@ -365,6 +374,7 @@ function mapOperationalDataset(raw: RawOperationalDataset, organizationId: strin
 
     return {
       id: campaign.id,
+      routeId: campaign.route_id,
       clientId: campaign.client_id,
       name: campaign.title,
       client: client?.name ?? 'Client',
@@ -382,35 +392,38 @@ function mapOperationalDataset(raw: RawOperationalDataset, organizationId: strin
 
   const campaignById = new Map(campaigns.map((campaign) => [campaign.id, campaign]));
 
-  const routes: Route[] = raw.campaigns
-    .filter((campaign) => campaign.route_id)
-    .map((campaign) => {
-      const route = routeById.get(campaign.route_id as string);
-      if (!route) {
-        return null;
-      }
+  const routes: Route[] = raw.routes.map((route) => {
+    const linkedCampaigns = raw.campaigns.filter((campaign) => campaign.route_id === route.id);
+    const primaryLinkedCampaign = linkedCampaigns[0] ?? null;
+    const stops = routeStopsByRouteId.get(route.id) ?? [];
+    const firstStop = stops[0];
+    const lastStop = stops[stops.length - 1];
+    const driverProfile = primaryLinkedCampaign?.driver_profile_id
+      ? profileById.get(primaryLinkedCampaign.driver_profile_id)
+      : null;
+    const linkedCampaignStatus = primaryLinkedCampaign ? mapCampaignStatus(primaryLinkedCampaign.status) : null;
+    const campaignName =
+      linkedCampaigns.length <= 1
+        ? (primaryLinkedCampaign?.title ?? 'Unlinked route')
+        : `${linkedCampaigns.length} linked campaigns`;
 
-      const stops = routeStopsByRouteId.get(route.id) ?? [];
-      const firstStop = stops[0];
-      const lastStop = stops[stops.length - 1];
-      const driverProfile = campaign.driver_profile_id ? profileById.get(campaign.driver_profile_id) : null;
-
-      return {
-        id: route.id,
-        campaignId: campaign.id,
-        campaignName: campaign.title,
-        name: route.name,
-        description: stops.map((stop) => stop.venue_name).join(' · ') || route.city || 'Route assignment',
-        startPoint: firstStop?.venue_name ?? route.city ?? route.name,
-        endPoint: lastStop?.venue_name ?? route.city ?? route.name,
-        estimatedMiles: deriveEstimatedMiles(stops),
-        assignedDriverId: campaign.driver_profile_id,
-        assignedDriverName: driverProfile?.display_name ?? null,
-        status: mapCampaignStatus(campaign.status) === 'paused' ? 'completed' : mapCampaignStatus(campaign.status),
-        tenantId: organizationId,
-      };
-    })
-    .filter((route): route is Route => route !== null);
+    return {
+      id: route.id,
+      campaignId: primaryLinkedCampaign?.id ?? `__unlinked__:${route.id}`,
+      campaignName,
+      name: route.name,
+      description: stops.map((stop) => stop.venue_name).join(' · ') || route.city || 'Route assignment',
+      startPoint: firstStop?.venue_name ?? route.city ?? route.name,
+      endPoint: lastStop?.venue_name ?? route.city ?? route.name,
+      estimatedMiles: deriveEstimatedMiles(stops),
+      assignedDriverId: primaryLinkedCampaign?.driver_profile_id ?? null,
+      assignedDriverName: driverProfile?.display_name ?? null,
+      status: linkedCampaignStatus
+        ? (linkedCampaignStatus === 'paused' ? 'completed' : linkedCampaignStatus)
+        : (route.is_active ? 'active' : 'completed'),
+      tenantId: organizationId,
+    };
+  });
 
   const proofs: Proof[] = raw.photos.map((photo) => {
     const campaign = campaignById.get(photo.campaign_id);

@@ -21,6 +21,7 @@ export default function SignupScreen() {
   const [yourName, setYourName] = React.useState('');
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
+  const [inviteCode, setInviteCode] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   type SignupField = {
@@ -39,6 +40,10 @@ export default function SignupScreen() {
       setError('All fields are required.');
       return;
     }
+    if (!inviteCode.trim()) {
+      setError('An invite code is required to create an organization.');
+      return;
+    }
     if (password.length < 8) {
       setError('Password must be at least 8 characters.');
       return;
@@ -46,9 +51,13 @@ export default function SignupScreen() {
     setError(null);
     setLoading(true);
     try {
-      // createOrganization creates the org + admin user server-side and returns credentials
-      await createOrganization({ orgName: orgName.trim(), adminName: yourName.trim(), email: email.trim(), password });
-      // Sign in immediately with the new credentials
+      await createOrganization({
+        orgName: orgName.trim(),
+        adminName: yourName.trim(),
+        email: email.trim(),
+        password,
+        inviteCode: inviteCode.trim().toUpperCase(),
+      });
       await signIn(email.trim(), password);
       router.replace('/');
     } catch (err) {
@@ -82,6 +91,7 @@ export default function SignupScreen() {
 
       <View style={styles.form}>
         {([
+          { label: 'Invite Code', value: inviteCode, set: setInviteCode, placeholder: 'Paste the code you were sent', testID: 'input-invite-code', autoCapitalize: 'none' },
           { label: 'Organization Name', value: orgName, set: setOrgName, placeholder: 'e.g. Apex AdTruck Co.', testID: 'input-org-name' },
           { label: 'Your Name', value: yourName, set: setYourName, placeholder: 'e.g. Sarah Miller', testID: 'input-your-name' },
           { label: 'Work Email', value: email, set: setEmail, placeholder: 'you@yourcompany.com', testID: 'input-signup-email', keyboard: 'email-address', autoCapitalize: 'none' },

@@ -11,8 +11,12 @@ interface CreateTenantUserPayload {
   username: string;
   display_name: string;
   password: string;
-  email?: string;
+  email: string;
   client_id?: string;
+}
+
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 function validate(body: CreateTenantUserPayload): string | null {
@@ -26,6 +30,10 @@ function validate(body: CreateTenantUserPayload): string | null {
     return 'display_name is required';
   if (!body.password || body.password.length < 6)
     return 'password must be at least 6 characters';
+  if (!body.email?.trim())
+    return 'email is required';
+  if (!isValidEmail(body.email.trim()))
+    return 'A valid email is required';
   if (body.role === 'client' && !body.client_id?.trim())
     return 'client_id is required for client users';
   return null;
@@ -82,7 +90,8 @@ Deno.serve(async (req) => {
     }
 
     const adminClient = createClient(supabaseUrl, serviceKey);
-    const email = body.email?.trim() || `${body.username.trim()}@${callerOrg}.tenant.local`;
+    const email = body.email.trim().toLowerCase();
+    const normalizedUsername = body.username.trim() || email;
 
     const { data: orgRow, error: orgError } = await adminClient
       .from('organizations')
@@ -95,6 +104,29 @@ Deno.serve(async (req) => {
         status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    if (body.role === 'client') {
+      const { data: clientRow, error: clientError } = await adminClient
+        .from('clients')
+        .select('id')
+        .eq('id', body.client_id!.trim())
+        .eq('organization_id', body.organization_id)
+        .maybeSingle();
+
+      if (clientError) {
+        return new Response(JSON.stringify({ error: clientError.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (!clientRow) {
+        return new Response(JSON.stringify({ error: 'Selected client_id is not valid for this organization' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
@@ -120,7 +152,7 @@ Deno.serve(async (req) => {
       id: userId,
       organization_id: body.organization_id,
       role: body.role,
-      username: body.username.trim(),
+      username: normalizedUsername,
       display_name: body.display_name.trim(),
       email,
       is_active: true,
