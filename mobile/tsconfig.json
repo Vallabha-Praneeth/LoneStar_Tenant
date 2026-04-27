@@ -6,7 +6,7 @@
   },
   "include": [
     "app",
-    "assets",
+    "app.config.ts",
     "components",
     "constants",
     "context",

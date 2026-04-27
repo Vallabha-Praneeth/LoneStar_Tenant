@@ -104,6 +104,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
       })
+      .catch((error) => {
+        console.warn('Failed to restore auth session', error);
+      })
       .finally(() => setIsLoading(false));
   }, []);
 
