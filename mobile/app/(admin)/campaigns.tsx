@@ -32,11 +32,14 @@ export default function AdminCampaignsScreen() {
   const [filter, setFilter] = React.useState<Filter>('all');
   const { campaigns: all, isLoading, error, refetch } = useTenantOperationalData();
   const filtered = filter === 'all' ? all : all.filter((campaign) => campaign.status === filter);
+  const stableRefetch = React.useCallback(() => {
+    refetch();
+  }, [refetch]);
 
   useFocusEffect(
     React.useCallback(() => {
-      refetch();
-    }, [refetch]),
+      stableRefetch();
+    }, [stableRefetch]),
   );
 
   return (
@@ -72,21 +75,17 @@ export default function AdminCampaignsScreen() {
           ))}
         </ScrollView>
 
-        <ThemedText variant="caption" color={theme.mutedForeground} style={styles.count}>
-          {filtered.length} campaign{filtered.length !== 1 ? 's' : ''}
-        </ThemedText>
+        {!isLoading && !error ? (
+          <ThemedText variant="caption" color={theme.mutedForeground} style={styles.count}>
+            {filtered.length} campaign{filtered.length !== 1 ? 's' : ''}
+          </ThemedText>
+        ) : null}
 
         {isLoading ? (
           <ThemedText variant="body" color={theme.mutedForeground}>Loading campaigns...</ThemedText>
-        ) : null}
-        {error ? (
+        ) : error ? (
           <ThemedText variant="body" color={theme.mutedForeground}>{error}</ThemedText>
-        ) : null}
-        {filtered.map((campaign) => (
-          <CampaignCard key={campaign.id} campaign={campaign} />
-        ))}
-
-        {!isLoading && !error && filtered.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <EmptyState
             icon="grid"
             title="No campaigns"
@@ -94,7 +93,11 @@ export default function AdminCampaignsScreen() {
             actionLabel="Create campaign"
             onAction={() => router.push('/(admin)/campaign-form')}
           />
-        ) : null}
+        ) : (
+          filtered.map((campaign) => (
+            <CampaignCard key={campaign.id} campaign={campaign} />
+          ))
+        )}
       </ScrollView>
     </ThemedView>
   );

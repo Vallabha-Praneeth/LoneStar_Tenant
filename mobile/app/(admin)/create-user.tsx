@@ -84,29 +84,50 @@ export default function CreateUserScreen() {
   const [password, setPassword] = React.useState('');
   const [clientId, setClientId] = React.useState('');
   const [clients, setClients] = React.useState<ClientRow[]>([]);
+  const [clientsLoadError, setClientsLoadError] = React.useState<string | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
 
   const orgId = bootstrap?.organization?.id;
   const isDriver = role === 'driver';
   const title = isDriver ? 'Add Driver' : 'Add Client User';
 
-  const loadClients = React.useCallback(() => {
+  async function readErrorMessage(response: Response, fallback: string) {
+    const raw = await response.text();
+    if (!raw) return fallback;
+    try {
+      const parsed = JSON.parse(raw) as { error?: string; message?: string; msg?: string };
+      return parsed.error ?? parsed.message ?? parsed.msg ?? fallback;
+    } catch {
+      return raw;
+    }
+  }
+
+  const loadClients = React.useCallback(async () => {
     if (isDriver || !accessToken || !orgId) {
+      setClientsLoadError(null);
       return;
     }
 
-    fetch(
-      `${SUPABASE_REST_URL}/clients?organization_id=eq.${orgId}&is_active=eq.true&select=id,name&order=name.asc`,
-      {
-        headers: {
-          apikey: SUPABASE_ANON_KEY_VALUE,
-          Authorization: `Bearer ${accessToken}`,
+    try {
+      const response = await fetch(
+        `${SUPABASE_REST_URL}/clients?organization_id=eq.${orgId}&is_active=eq.true&select=id,name&order=name.asc`,
+        {
+          headers: {
+            apikey: SUPABASE_ANON_KEY_VALUE,
+            Authorization: `Bearer ${accessToken}`,
+          },
         },
-      },
-    )
-      .then((r) => r.json())
-      .then((rows: ClientRow[]) => setClients(rows))
-      .catch(() => {});
+      );
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response, 'Could not load client entities.'));
+      }
+      const rows = (await response.json()) as ClientRow[];
+      setClients(rows);
+      setClientsLoadError(null);
+    } catch (error) {
+      setClients([]);
+      setClientsLoadError(error instanceof Error ? error.message : 'Could not load client entities.');
+    }
   }, [isDriver, accessToken, orgId]);
 
   React.useEffect(() => {
@@ -212,7 +233,11 @@ export default function CreateUserScreen() {
           {!isDriver && (
             <View style={styles.field}>
               <ThemedText variant="caption" color={theme.mutedForeground}>Client Organization *</ThemedText>
-              {clients.length === 0 ? (
+              {clientsLoadError ? (
+                <ThemedText variant="caption" color={theme.mutedForeground} style={styles.emptyClients}>
+                  {clientsLoadError}
+                </ThemedText>
+              ) : clients.length === 0 ? (
                 <>
                   <ThemedText variant="caption" color={theme.mutedForeground} style={styles.emptyClients}>
                     No active clients — create a client entity first.
