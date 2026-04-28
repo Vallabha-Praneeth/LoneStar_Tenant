@@ -213,6 +213,10 @@ export default function RouteFormScreen() {
       setSaveError('Route name is required.');
       return;
     }
+    if (stops.some((stop) => !stop.venueName.trim())) {
+      setSaveError('Each stop must include a venue name.');
+      return;
+    }
 
     setSaving(true);
     setSaveError(null);
@@ -270,46 +274,26 @@ export default function RouteFormScreen() {
         throw new Error('Unable to resolve route id.');
       }
 
-      const deleteStopsResponse = await fetch(
-        `${SUPABASE_REST_URL}/route_stops?route_id=eq.${finalRouteId}&organization_id=eq.${orgId}`,
-        {
-          method: 'DELETE',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            apikey: SUPABASE_ANON_KEY_VALUE,
-            'Content-Type': 'application/json',
-            Prefer: 'return=minimal',
-          },
-        },
-      );
-
-      if (!deleteStopsResponse.ok) {
-        throw new Error(await readErrorMessage(deleteStopsResponse, 'Could not reset route stops.'));
-      }
-
-      const stopPayload = stops.map((stop, index) => ({
-        organization_id: orgId,
-        route_id: finalRouteId,
-        stop_order: index + 1,
+      const stopPayload = stops.map((stop) => ({
         venue_name: stop.venueName.trim(),
         address: stop.address.trim() || null,
       }));
 
-      if (stopPayload.length > 0) {
-        const createStopsResponse = await fetch(`${SUPABASE_REST_URL}/route_stops`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            apikey: SUPABASE_ANON_KEY_VALUE,
-            'Content-Type': 'application/json',
-            Prefer: 'return=minimal',
-          },
-          body: JSON.stringify(stopPayload),
-        });
+      const replaceStopsResponse = await fetch(`${SUPABASE_REST_URL}/rpc/replace_route_stops`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          apikey: SUPABASE_ANON_KEY_VALUE,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          p_route_id: finalRouteId,
+          p_stops: stopPayload,
+        }),
+      });
 
-        if (!createStopsResponse.ok) {
-          throw new Error(await readErrorMessage(createStopsResponse, 'Could not save route stops.'));
-        }
+      if (!replaceStopsResponse.ok) {
+        throw new Error(await readErrorMessage(replaceStopsResponse, 'Could not save route stops.'));
       }
 
       clearTenantOperationalDataCache();

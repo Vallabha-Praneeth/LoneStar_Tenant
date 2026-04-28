@@ -62,6 +62,8 @@ interface DriverShiftRow {
   driver_profile_id: string;
   started_at: string;
   ended_at: string | null;
+  start_odometer: number | null;
+  end_odometer: number | null;
   shift_status: 'scheduled' | 'active' | 'completed' | 'no_show' | 'cancelled';
 }
 
@@ -311,7 +313,7 @@ async function fetchRawOperationalDataset(accessToken: string, organizationId: s
       order: 'campaign_date.desc,title.asc',
     }, accessToken),
     fetchSupabaseRows<DriverShiftRow>('driver_shifts', {
-      select: 'id,campaign_id,driver_profile_id,started_at,ended_at,shift_status',
+      select: 'id,campaign_id,driver_profile_id,started_at,ended_at,start_odometer,end_odometer,shift_status',
       ...baseFilter,
       order: 'started_at.desc',
     }, accessToken),
@@ -456,8 +458,8 @@ function mapOperationalDataset(raw: RawOperationalDataset, organizationId: strin
       startTime: toClock(shift.started_at),
       endTime: toClock(shift.ended_at),
       status: mapShiftStatus(shift.shift_status),
-      startOdometer: null,
-      endOdometer: null,
+      startOdometer: shift.start_odometer,
+      endOdometer: shift.end_odometer,
     };
   });
 

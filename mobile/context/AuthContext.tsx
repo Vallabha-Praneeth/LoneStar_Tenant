@@ -12,6 +12,7 @@ import {
 import type { OrgBranding } from '../constants/tenants';
 import {
   bootstrapTenantSession,
+  refreshSession,
   signInWithPassword,
 } from '../constants/supabase';
 import { clearTenantOperationalDataCache } from '../constants/tenant-operational-data';
@@ -90,17 +91,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY)
-      .then((raw) => {
+      .then(async (raw) => {
         if (raw) {
           try {
             const session = JSON.parse(raw) as StoredSession;
-            setAccessToken(session.accessToken);
-            setRefreshToken(session.refreshToken);
-            setLoginContext(session.loginContext);
-            setBootstrap(session.bootstrap);
-            setOrgBranding(session.orgBranding ?? null);
+            if (!session.refreshToken) {
+              throw new Error('Stored session missing refresh token');
+            }
+            const refreshed = await refreshSession(session.refreshToken);
+            const nextSession: StoredSession = {
+              accessToken: refreshed.access_token,
+              refreshToken: refreshed.refresh_token,
+              loginContext: session.loginContext,
+              bootstrap: session.bootstrap,
+              orgBranding: session.orgBranding ?? null,
+            };
+            await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextSession));
+            setAccessToken(nextSession.accessToken);
+            setRefreshToken(nextSession.refreshToken);
+            setLoginContext(nextSession.loginContext);
+            setBootstrap(nextSession.bootstrap);
+            setOrgBranding(nextSession.orgBranding);
           } catch {
             void AsyncStorage.removeItem(STORAGE_KEY);
+            setAccessToken(null);
+            setRefreshToken(null);
+            setLoginContext(null);
+            setBootstrap(null);
+            setOrgBranding(null);
           }
         }
       })
@@ -143,11 +161,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const refreshBootstrap = React.useCallback(async () => {
-    if (!accessToken || !bootstrap || !loginContext) {
+    if (!bootstrap || !loginContext || !refreshToken) {
       return;
     }
-
-    const bootstrapResponse = await bootstrapTenantSession(accessToken, {
+    const refreshed = await refreshSession(refreshToken);
+    const bootstrapResponse = await bootstrapTenantSession(refreshed.access_token, {
       expectedOrgSlug: bootstrap.organization.slug,
     });
     const branding = deriveBrandingFromBootstrap(bootstrapResponse);
@@ -159,17 +177,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       brandingDisplayName: bootstrapResponse.branding.name,
     };
     const session: StoredSession = {
-      accessToken,
-      refreshToken: refreshToken ?? '',
+      accessToken: refreshed.access_token,
+      refreshToken: refreshed.refresh_token,
       loginContext: nextLoginContext,
       bootstrap: bootstrapResponse.session,
       orgBranding: branding,
     };
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+    setAccessToken(refreshed.access_token);
+    setRefreshToken(refreshed.refresh_token);
     setLoginContext(nextLoginContext);
     setBootstrap(bootstrapResponse.session);
     setOrgBranding(branding);
-  }, [accessToken, bootstrap, loginContext, refreshToken]);
+  }, [bootstrap, loginContext, refreshToken]);
 
   const signOut = React.useCallback(async () => {
     await AsyncStorage.removeItem(STORAGE_KEY);

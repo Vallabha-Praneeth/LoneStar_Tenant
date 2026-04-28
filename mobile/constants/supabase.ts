@@ -10,6 +10,11 @@ interface PasswordSignInResponse {
   refresh_token: string;
 }
 
+export interface RefreshSessionResponse {
+  access_token: string;
+  refresh_token: string;
+}
+
 interface ErrorResponse {
   error?: string;
   msg?: string;
@@ -271,6 +276,17 @@ export async function signInWithPassword(email: string, password: string) {
       body: JSON.stringify({ email, password }),
     },
     'Unable to sign in with the provided credentials.',
+  );
+}
+
+export async function refreshSession(refreshToken: string): Promise<RefreshSessionResponse> {
+  return requestJson<RefreshSessionResponse>(
+    '/auth/v1/token?grant_type=refresh_token',
+    {
+      method: 'POST',
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    },
+    'Unable to refresh session.',
   );
 }
 

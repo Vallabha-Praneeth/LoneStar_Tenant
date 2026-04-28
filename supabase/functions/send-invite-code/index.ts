@@ -111,7 +111,7 @@ Deno.serve(async (req) => {
       }
       lastError = error;
       // Retry only for unique-collision cases; bail otherwise.
-      if (error && !/duplicate key|unique/i.test(error.message)) {
+      if (error && error.code !== '23505') {
         break;
       }
     }

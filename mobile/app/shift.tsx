@@ -87,6 +87,11 @@ export default function ShiftScreen() {
       setActionError('Selected campaign is no longer valid. Please choose an assigned active campaign.');
       return;
     }
+    const parsedStartOdometer = Number(odometer.trim());
+    if (!Number.isFinite(parsedStartOdometer) || parsedStartOdometer < 0) {
+      setActionError('Enter a valid numeric start odometer.');
+      return;
+    }
 
     setActionError(null);
     setIsStartingShift(true);
@@ -105,6 +110,7 @@ export default function ShiftScreen() {
           driver_profile_id: user.id,
           started_at: new Date().toISOString(),
           shift_status: 'active',
+          start_odometer: parsedStartOdometer,
         }),
       });
 
@@ -127,6 +133,11 @@ export default function ShiftScreen() {
       setActionError('No active shift found to end.');
       return;
     }
+    const parsedEndOdometer = Number(odometer.trim());
+    if (!Number.isFinite(parsedEndOdometer) || parsedEndOdometer < 0) {
+      setActionError('Enter a valid numeric end odometer.');
+      return;
+    }
 
     setActionError(null);
     setIsEndingShift(true);
@@ -144,6 +155,7 @@ export default function ShiftScreen() {
           body: JSON.stringify({
             ended_at: new Date().toISOString(),
             shift_status: 'completed',
+            end_odometer: parsedEndOdometer,
           }),
         },
       );
