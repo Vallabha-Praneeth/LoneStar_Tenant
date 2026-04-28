@@ -247,17 +247,24 @@ function buildScopedView(
         .filter((routeId): routeId is string => Boolean(routeId)),
     );
     visibleRoutes = data.routes.filter((route) => allowedRouteIds.has(route.id));
-  } else if (user.role === 'client' && clientId) {
-    visibleCampaigns = data.campaigns.filter((campaign) => campaign.clientId === clientId);
-    const allowedCampaignIds = new Set(visibleCampaigns.map((campaign) => campaign.id));
-    const allowedRouteIds = new Set(
-      visibleCampaigns
-        .map((campaign) => campaign.routeId)
-        .filter((routeId): routeId is string => Boolean(routeId)),
-    );
-    visibleProofs = data.proofs.filter((proof) => allowedCampaignIds.has(proof.campaignId));
-    visibleRoutes = data.routes.filter((route) => allowedRouteIds.has(route.id));
-    visibleShifts = [];
+  } else if (user.role === 'client') {
+    if (!clientId) {
+      visibleCampaigns = [];
+      visibleProofs = [];
+      visibleRoutes = [];
+      visibleShifts = [];
+    } else {
+      visibleCampaigns = data.campaigns.filter((campaign) => campaign.clientId === clientId);
+      const allowedCampaignIds = new Set(visibleCampaigns.map((campaign) => campaign.id));
+      const allowedRouteIds = new Set(
+        visibleCampaigns
+          .map((campaign) => campaign.routeId)
+          .filter((routeId): routeId is string => Boolean(routeId)),
+      );
+      visibleProofs = data.proofs.filter((proof) => allowedCampaignIds.has(proof.campaignId));
+      visibleRoutes = data.routes.filter((route) => allowedRouteIds.has(route.id));
+      visibleShifts = [];
+    }
   }
 
   return {

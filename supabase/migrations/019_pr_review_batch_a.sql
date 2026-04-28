@@ -40,8 +40,8 @@ BEGIN
     RAISE EXCEPTION 'Route not found';
   END IF;
 
-  IF v_route_org_id <> public.get_jwt_org_id()
-     OR public.get_jwt_org_role() <> 'admin' THEN
+  IF v_route_org_id IS DISTINCT FROM public.get_jwt_org_id()
+     OR coalesce(public.get_jwt_org_role(), '') <> 'admin' THEN
     RAISE EXCEPTION 'Not authorized to replace route stops';
   END IF;
 
