@@ -321,34 +321,17 @@ export default function RouteFormScreen() {
             setSaving(true);
             setSaveError(null);
             try {
-              const deleteStopsResponse = await fetch(
-                `${SUPABASE_REST_URL}/route_stops?route_id=eq.${resolvedRouteId}&organization_id=eq.${orgId}`,
-                {
-                  method: 'DELETE',
-                  headers: {
-                    Authorization: `Bearer ${accessToken}`,
-                    apikey: SUPABASE_ANON_KEY_VALUE,
-                    'Content-Type': 'application/json',
-                    Prefer: 'return=minimal',
-                  },
+              const deleteRouteResponse = await fetch(`${SUPABASE_REST_URL}/rpc/delete_route_with_stops`, {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  apikey: SUPABASE_ANON_KEY_VALUE,
+                  'Content-Type': 'application/json',
                 },
-              );
-              if (!deleteStopsResponse.ok) {
-                throw new Error(await readErrorMessage(deleteStopsResponse, 'Could not delete route stops.'));
-              }
-
-              const deleteRouteResponse = await fetch(
-                `${SUPABASE_REST_URL}/routes?id=eq.${resolvedRouteId}&organization_id=eq.${orgId}`,
-                {
-                  method: 'DELETE',
-                  headers: {
-                    Authorization: `Bearer ${accessToken}`,
-                    apikey: SUPABASE_ANON_KEY_VALUE,
-                    'Content-Type': 'application/json',
-                    Prefer: 'return=minimal',
-                  },
-                },
-              );
+                body: JSON.stringify({
+                  p_route_id: resolvedRouteId,
+                }),
+              });
 
               if (!deleteRouteResponse.ok) {
                 throw new Error(await readErrorMessage(deleteRouteResponse, 'Could not delete route.'));
