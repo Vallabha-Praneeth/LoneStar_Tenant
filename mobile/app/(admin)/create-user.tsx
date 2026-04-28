@@ -88,6 +88,7 @@ export default function CreateUserScreen() {
   const [submitting, setSubmitting] = React.useState(false);
 
   const orgId = bootstrap?.organization?.id;
+  const isAuthReady = Boolean(accessToken && orgId);
   const isDriver = role === 'driver';
   const title = isDriver ? 'Add Driver' : 'Add Client User';
 
@@ -129,10 +130,6 @@ export default function CreateUserScreen() {
       setClientsLoadError(error instanceof Error ? error.message : 'Could not load client entities.');
     }
   }, [isDriver, accessToken, orgId]);
-
-  React.useEffect(() => {
-    loadClients();
-  }, [loadClients]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -279,7 +276,7 @@ export default function CreateUserScreen() {
               label={isDriver ? 'Add Driver' : 'Add Client User'}
               onPress={handleSubmit}
               loading={submitting}
-              disabled={submitting}
+              disabled={submitting || !isAuthReady}
             />
           </View>
         </ScrollView>
