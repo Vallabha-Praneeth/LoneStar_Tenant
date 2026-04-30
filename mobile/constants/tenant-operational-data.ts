@@ -90,7 +90,7 @@ interface CampaignCostRow {
   cost_type_id: string;
   amount: number;
   notes: string | null;
-  recorded_at: string;
+  created_at: string;
 }
 
 interface RawOperationalDataset {
@@ -337,9 +337,9 @@ async function fetchRawOperationalDataset(accessToken: string, organizationId: s
       order: 'name.asc',
     }, accessToken),
     fetchSupabaseRows<CampaignCostRow>('campaign_costs', {
-      select: 'id,campaign_id,cost_type_id,amount,notes,recorded_at',
+      select: 'id,campaign_id,cost_type_id,amount,notes,created_at',
       ...baseFilter,
-      order: 'recorded_at.desc',
+      order: 'created_at.desc',
     }, accessToken),
   ]);
 
@@ -540,7 +540,7 @@ function mapOperationalDataset(raw: RawOperationalDataset, organizationId: strin
     costTypeName: costTypeById.get(cc.cost_type_id)?.name ?? 'Unknown',
     amount: cc.amount,
     notes: cc.notes ?? '',
-    recordedAt: cc.recorded_at,
+    recordedAt: cc.created_at,
   }));
 
   return {
