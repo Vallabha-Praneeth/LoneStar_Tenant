@@ -4,6 +4,8 @@ import type {
   TenantBootstrapRequest,
   TenantBootstrapResponse,
 } from '../../shared/tenant-types';
+import { Platform } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
 
 interface PasswordSignInResponse {
   access_token: string;
@@ -82,6 +84,9 @@ export const BRANDING_LOGOS_BUCKET = 'branding-logos';
 export const MAX_PROOF_UPLOAD_BYTES = 15 * 1024 * 1024;
 export const MAX_BRANDING_LOGO_UPLOAD_BYTES = 5 * 1024 * 1024;
 
+/** Fail-fast if storage read/upload/insert hangs (e.g. Android content:// + fetch().blob()). */
+const PROOF_UPLOAD_OPERATION_TIMEOUT_MS = 45_000;
+
 function requireConfig() {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     throw new Error('Supabase mobile config is missing. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.');
@@ -122,6 +127,45 @@ function buildProofNote(location: string, notes?: string) {
   const trimmedLocation = location.trim();
   const trimmedNotes = notes?.trim() ?? '';
   return trimmedNotes ? `${trimmedLocation} | ${trimmedNotes}` : trimmedLocation;
+}
+
+function proofUploadTimedOutError() {
+  return new Error('Proof upload timed out. Please try again.');
+}
+
+function withProofUploadTimeout<T>(promise: Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      console.warn('[proof-upload] operation exceeded timeout (ms)', PROOF_UPLOAD_OPERATION_TIMEOUT_MS);
+      reject(proofUploadTimedOutError());
+    }, PROOF_UPLOAD_OPERATION_TIMEOUT_MS);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+function parseStorageUploadFailureBody(status: number, body: string, fallback: string) {
+  const trimmed = body.trim();
+  if (trimmed.length > 0 && trimmed.length < 800) {
+    try {
+      const parsed = JSON.parse(trimmed) as ErrorResponse;
+      const msg = parsed.error_description ?? parsed.error ?? parsed.message ?? parsed.msg;
+      if (msg) {
+        return msg;
+      }
+    } catch {
+      return trimmed;
+    }
+  }
+  return `${fallback} (HTTP ${status})`;
 }
 
 function createPhotoId() {
@@ -577,16 +621,8 @@ export async function uploadOrganizationBrandingLogo(
   }
 }
 
-export async function createCampaignProofUpload(
-  input: CreateCampaignProofUploadInput,
-): Promise<CampaignPhotoRecord> {
-  requireConfig();
-
-  const photoId = createPhotoId();
-  const extension = deriveProofExtension(input.fileName, input.mimeType, input.photoUri);
-  const storagePath = `${input.organizationId}/campaigns/${input.campaignId}/proofs/${photoId}.${extension}`;
-  const sourceResponse = await fetch(input.photoUri);
-
+async function loadProofBlobForWeb(photoUri: string, mimeType: string | null | undefined) {
+  const sourceResponse = await fetch(photoUri);
   if (!sourceResponse.ok) {
     throw new Error('Unable to read the selected photo.');
   }
@@ -596,11 +632,20 @@ export async function createCampaignProofUpload(
     throw new Error('Selected photo is too large. Keep uploads under 15 MB.');
   }
 
-  const contentType = input.mimeType || payload.type || 'image/jpeg';
-  const uploadResponse = await fetch(createObjectUrl(CAMPAIGN_PROOFS_BUCKET, storagePath, 'object'), {
+  const contentType = mimeType || payload.type || 'image/jpeg';
+  return { blob: payload, contentType };
+}
+
+async function uploadProofBytesViaFetch(
+  uploadUrl: string,
+  accessToken: string,
+  payload: Blob,
+  contentType: string,
+) {
+  const uploadResponse = await fetch(uploadUrl, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${input.accessToken}`,
+      Authorization: `Bearer ${accessToken}`,
       apikey: SUPABASE_ANON_KEY,
       'Content-Type': contentType,
       'x-upsert': 'false',
@@ -611,61 +656,145 @@ export async function createCampaignProofUpload(
   if (!uploadResponse.ok) {
     throw new Error(await readErrorMessage(uploadResponse, 'Unable to upload the proof photo.'));
   }
+}
 
-  // Track whether the DB insert was definitively rejected (non-2xx) so we only
-  // clean up the uploaded storage object when we know the row was never created.
-  // An ambiguous failure (e.g., network drop while reading a 2xx response) leaves
-  // the storage object in place to avoid orphaning a committed row.
-  let insertDefinitelyFailed = false;
+async function uploadProofFileNative(uploadUrl: string, fileUri: string, contentType: string, accessToken: string) {
+  const result = await FileSystem.uploadAsync(uploadUrl, fileUri, {
+    httpMethod: 'POST',
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      apikey: SUPABASE_ANON_KEY,
+      'Content-Type': contentType,
+      'x-upsert': 'false',
+    },
+  });
+
+  if (result.status < 200 || result.status >= 300) {
+    console.warn('[proof-upload] storage upload rejected', { status: result.status });
+    throw new Error(parseStorageUploadFailureBody(result.status, result.body, 'Unable to upload the proof photo.'));
+  }
+}
+
+async function runCampaignProofUpload(input: CreateCampaignProofUploadInput): Promise<CampaignPhotoRecord> {
+  requireConfig();
+
+  const photoId = createPhotoId();
+  const extension = deriveProofExtension(input.fileName, input.mimeType, input.photoUri);
+  const storagePath = `${input.organizationId}/campaigns/${input.campaignId}/proofs/${photoId}.${extension}`;
+  const uploadUrl = createObjectUrl(CAMPAIGN_PROOFS_BUCKET, storagePath, 'object');
+
+  let stagedCacheUri: string | null = null;
+  let uploadSourceUri = input.photoUri;
+
+  if (Platform.OS !== 'web' && FileSystem.cacheDirectory && input.photoUri.startsWith('content://')) {
+    try {
+      stagedCacheUri = `${FileSystem.cacheDirectory}proof-upload-${photoId}.${extension}`;
+      await FileSystem.copyAsync({ from: input.photoUri, to: stagedCacheUri });
+      uploadSourceUri = stagedCacheUri;
+    } catch {
+      console.warn('[proof-upload] could not stage content URI to cache; uploading original picker URI');
+    }
+  }
 
   try {
-    requireConfig();
-    const insertResponse = await fetch(
-      `${SUPABASE_URL}/rest/v1/campaign_photos?select=id,organization_id,campaign_id,uploaded_by,storage_path,note,submitted_at,captured_at,is_hidden`,
-      {
-        method: 'POST',
-        headers: {
-          apikey: SUPABASE_ANON_KEY,
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${input.accessToken}`,
-          Prefer: 'return=representation',
-        },
-        body: JSON.stringify([
-          {
-            id: photoId,
-            organization_id: input.organizationId,
-            campaign_id: input.campaignId,
-            uploaded_by: input.uploadedBy,
-            storage_path: storagePath,
-            note: buildProofNote(input.location, input.notes),
-            captured_at: input.capturedAt ?? null,
-            is_hidden: false,
-          },
-        ]),
-      },
-    );
-
-    if (!insertResponse.ok) {
-      insertDefinitelyFailed = true;
-      throw new Error(await readErrorMessage(insertResponse, 'Unable to record the uploaded proof.'));
-    }
-
-    const inserted = (await insertResponse.json()) as CampaignPhotoRecord[];
-
-    if (!inserted[0]) {
-      throw new Error('Proof upload completed, but no campaign photo row was returned.');
-    }
-
-    return inserted[0];
-  } catch (error) {
-    if (insertDefinitelyFailed) {
+    if (Platform.OS === 'web') {
+      const { blob, contentType } = await loadProofBlobForWeb(input.photoUri, input.mimeType);
+      await uploadProofBytesViaFetch(uploadUrl, input.accessToken, blob, contentType);
+    } else {
+      const contentType = input.mimeType || 'image/jpeg';
       try {
-        await deleteStorageObject(input.accessToken, CAMPAIGN_PROOFS_BUCKET, storagePath);
+        const info = await FileSystem.getInfoAsync(uploadSourceUri);
+        if (info.exists && info.size > MAX_PROOF_UPLOAD_BYTES) {
+          throw new Error('Selected photo is too large. Keep uploads under 15 MB.');
+        }
+      } catch (statError) {
+        if (statError instanceof Error && statError.message.includes('too large')) {
+          throw statError;
+        }
+        console.warn('[proof-upload] could not read file metadata for size check');
+      }
+
+      await uploadProofFileNative(uploadUrl, uploadSourceUri, contentType, input.accessToken);
+    }
+
+    // Track whether the DB insert was definitively rejected (non-2xx) so we only
+    // clean up the uploaded storage object when we know the row was never created.
+    // An ambiguous failure (e.g., network drop while reading a 2xx response) leaves
+    // the storage object in place to avoid orphaning a committed row.
+    let insertDefinitelyFailed = false;
+
+    try {
+      requireConfig();
+      const insertResponse = await fetch(
+        `${SUPABASE_URL}/rest/v1/campaign_photos?select=id,organization_id,campaign_id,uploaded_by,storage_path,note,submitted_at,captured_at,is_hidden`,
+        {
+          method: 'POST',
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${input.accessToken}`,
+            Prefer: 'return=representation',
+          },
+          body: JSON.stringify([
+            {
+              id: photoId,
+              organization_id: input.organizationId,
+              campaign_id: input.campaignId,
+              uploaded_by: input.uploadedBy,
+              storage_path: storagePath,
+              note: buildProofNote(input.location, input.notes),
+              captured_at: input.capturedAt ?? null,
+              is_hidden: false,
+            },
+          ]),
+        },
+      );
+
+      if (!insertResponse.ok) {
+        insertDefinitelyFailed = true;
+        throw new Error(await readErrorMessage(insertResponse, 'Unable to record the uploaded proof.'));
+      }
+
+      const inserted = (await insertResponse.json()) as CampaignPhotoRecord[];
+
+      if (!inserted[0]) {
+        throw new Error('Proof upload completed, but no campaign photo row was returned.');
+      }
+
+      return inserted[0];
+    } catch (error) {
+      if (insertDefinitelyFailed) {
+        try {
+          await deleteStorageObject(input.accessToken, CAMPAIGN_PROOFS_BUCKET, storagePath);
+        } catch {
+          // Ignore cleanup errors; orphan cleanup can be retried separately.
+        }
+      }
+
+      throw error;
+    }
+  } finally {
+    if (stagedCacheUri) {
+      try {
+        await FileSystem.deleteAsync(stagedCacheUri, { idempotent: true });
       } catch {
-        // Ignore cleanup errors; orphan cleanup can be retried separately.
+        // Best-effort cleanup of staged copy.
       }
     }
+  }
+}
 
+export async function createCampaignProofUpload(
+  input: CreateCampaignProofUploadInput,
+): Promise<CampaignPhotoRecord> {
+  requireConfig();
+
+  try {
+    return await withProofUploadTimeout(runCampaignProofUpload(input));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn('[proof-upload]', message);
     throw error;
   }
 }

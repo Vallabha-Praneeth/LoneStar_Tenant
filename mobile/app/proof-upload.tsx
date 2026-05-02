@@ -183,7 +183,7 @@ export default function ProofUploadScreen() {
         notes,
       });
 
-      await refetch();
+      void refetch();
       router.replace({
         pathname: '/upload-success',
         params: {
