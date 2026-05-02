@@ -84,8 +84,11 @@ export const BRANDING_LOGOS_BUCKET = 'branding-logos';
 export const MAX_PROOF_UPLOAD_BYTES = 15 * 1024 * 1024;
 export const MAX_BRANDING_LOGO_UPLOAD_BYTES = 5 * 1024 * 1024;
 
-/** Fail-fast if storage read/upload/insert hangs (e.g. Android content:// + fetch().blob()). */
-const PROOF_UPLOAD_OPERATION_TIMEOUT_MS = 45_000;
+/** Phase timeouts so a slow DB insert does not fire while storage upload is already done (orphans). */
+const PROOF_PREPARE_TIMEOUT_MS = 30_000;
+const PROOF_STORAGE_UPLOAD_TIMEOUT_MS = 60_000;
+const PROOF_DB_INSERT_TIMEOUT_MS = 30_000;
+const PROOF_STORAGE_CLEANUP_TIMEOUT_MS = 15_000;
 
 function requireConfig() {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
@@ -129,16 +132,12 @@ function buildProofNote(location: string, notes?: string) {
   return trimmedNotes ? `${trimmedLocation} | ${trimmedNotes}` : trimmedLocation;
 }
 
-function proofUploadTimedOutError() {
-  return new Error('Proof upload timed out. Please try again.');
-}
-
-function withProofUploadTimeout<T>(promise: Promise<T>): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, ms: number, onTimeout: () => Error): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
-      console.warn('[proof-upload] operation exceeded timeout (ms)', PROOF_UPLOAD_OPERATION_TIMEOUT_MS);
-      reject(proofUploadTimedOutError());
-    }, PROOF_UPLOAD_OPERATION_TIMEOUT_MS);
+      console.warn('[proof-upload] phase exceeded timeout (ms)', ms);
+      reject(onTimeout());
+    }, ms);
     promise.then(
       (value) => {
         clearTimeout(timer);
@@ -150,6 +149,13 @@ function withProofUploadTimeout<T>(promise: Promise<T>): Promise<T> {
       },
     );
   });
+}
+
+function isAbortError(error: unknown): boolean {
+  if (error && typeof error === 'object' && 'name' in error) {
+    return (error as { name: string }).name === 'AbortError';
+  }
+  return false;
 }
 
 function parseStorageUploadFailureBody(status: number, body: string, fallback: string) {
@@ -228,6 +234,21 @@ async function deleteStorageObject(accessToken: string, bucket: string, storageP
 
   if (!response.ok) {
     throw new Error(await readErrorMessage(response, 'Unable to remove failed proof upload.'));
+  }
+}
+
+async function bestEffortDeleteOrphanedProofObject(accessToken: string, storagePath: string) {
+  try {
+    await withTimeout(
+      deleteStorageObject(accessToken, CAMPAIGN_PROOFS_BUCKET, storagePath),
+      PROOF_STORAGE_CLEANUP_TIMEOUT_MS,
+      () => new Error('Proof storage cleanup timed out.'),
+    );
+  } catch (cleanupError) {
+    console.warn(
+      '[proof-upload] orphan storage cleanup failed',
+      cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+    );
   }
 }
 
@@ -688,23 +709,44 @@ async function runCampaignProofUpload(input: CreateCampaignProofUploadInput): Pr
   let uploadSourceUri = input.photoUri;
 
   if (Platform.OS !== 'web' && FileSystem.cacheDirectory && input.photoUri.startsWith('content://')) {
+    stagedCacheUri = `${FileSystem.cacheDirectory}proof-upload-${photoId}.${extension}`;
     try {
-      stagedCacheUri = `${FileSystem.cacheDirectory}proof-upload-${photoId}.${extension}`;
-      await FileSystem.copyAsync({ from: input.photoUri, to: stagedCacheUri });
+      await withTimeout(
+        FileSystem.copyAsync({ from: input.photoUri, to: stagedCacheUri }),
+        PROOF_PREPARE_TIMEOUT_MS,
+        () => new Error('Could not prepare the selected photo. Please try again.'),
+      );
       uploadSourceUri = stagedCacheUri;
-    } catch {
+    } catch (prepareError) {
+      const msg = prepareError instanceof Error ? prepareError.message : '';
+      if (msg === 'Could not prepare the selected photo. Please try again.') {
+        throw prepareError;
+      }
       console.warn('[proof-upload] could not stage content URI to cache; uploading original picker URI');
+      stagedCacheUri = null;
     }
   }
 
   try {
     if (Platform.OS === 'web') {
-      const { blob, contentType } = await loadProofBlobForWeb(input.photoUri, input.mimeType);
-      await uploadProofBytesViaFetch(uploadUrl, input.accessToken, blob, contentType);
+      const { blob, contentType } = await withTimeout(
+        loadProofBlobForWeb(input.photoUri, input.mimeType),
+        PROOF_PREPARE_TIMEOUT_MS,
+        () => new Error('Reading the photo took too long. Please try again.'),
+      );
+      await withTimeout(
+        uploadProofBytesViaFetch(uploadUrl, input.accessToken, blob, contentType),
+        PROOF_STORAGE_UPLOAD_TIMEOUT_MS,
+        () => new Error('Photo upload timed out. Please try again.'),
+      );
     } else {
       const contentType = input.mimeType || 'image/jpeg';
       try {
-        const info = await FileSystem.getInfoAsync(uploadSourceUri);
+        const info = await withTimeout(
+          FileSystem.getInfoAsync(uploadSourceUri),
+          PROOF_PREPARE_TIMEOUT_MS,
+          () => new Error('Reading the photo took too long. Please try again.'),
+        );
         if (info.exists && info.size > MAX_PROOF_UPLOAD_BYTES) {
           throw new Error('Selected photo is too large. Keep uploads under 15 MB.');
         }
@@ -712,17 +754,24 @@ async function runCampaignProofUpload(input: CreateCampaignProofUploadInput): Pr
         if (statError instanceof Error && statError.message.includes('too large')) {
           throw statError;
         }
+        if (statError instanceof Error && statError.message.includes('Reading the photo')) {
+          throw statError;
+        }
         console.warn('[proof-upload] could not read file metadata for size check');
       }
 
-      await uploadProofFileNative(uploadUrl, uploadSourceUri, contentType, input.accessToken);
+      await withTimeout(
+        uploadProofFileNative(uploadUrl, uploadSourceUri, contentType, input.accessToken),
+        PROOF_STORAGE_UPLOAD_TIMEOUT_MS,
+        () => new Error('Photo upload timed out. Please try again.'),
+      );
     }
 
-    // Track whether the DB insert was definitively rejected (non-2xx) so we only
-    // clean up the uploaded storage object when we know the row was never created.
-    // An ambiguous failure (e.g., network drop while reading a 2xx response) leaves
-    // the storage object in place to avoid orphaning a committed row.
-    let insertDefinitelyFailed = false;
+    const controller = new AbortController();
+    const insertTimer = setTimeout(() => {
+      console.warn('[proof-upload] campaign_photos insert exceeded timeout (ms)', PROOF_DB_INSERT_TIMEOUT_MS);
+      controller.abort();
+    }, PROOF_DB_INSERT_TIMEOUT_MS);
 
     try {
       requireConfig();
@@ -730,6 +779,7 @@ async function runCampaignProofUpload(input: CreateCampaignProofUploadInput): Pr
         `${SUPABASE_URL}/rest/v1/campaign_photos?select=id,organization_id,campaign_id,uploaded_by,storage_path,note,submitted_at,captured_at,is_hidden`,
         {
           method: 'POST',
+          signal: controller.signal,
           headers: {
             apikey: SUPABASE_ANON_KEY,
             'Content-Type': 'application/json',
@@ -752,27 +802,33 @@ async function runCampaignProofUpload(input: CreateCampaignProofUploadInput): Pr
       );
 
       if (!insertResponse.ok) {
-        insertDefinitelyFailed = true;
+        await bestEffortDeleteOrphanedProofObject(input.accessToken, storagePath);
         throw new Error(await readErrorMessage(insertResponse, 'Unable to record the uploaded proof.'));
       }
 
-      const inserted = (await insertResponse.json()) as CampaignPhotoRecord[];
+      let inserted: CampaignPhotoRecord[];
+      try {
+        inserted = (await insertResponse.json()) as CampaignPhotoRecord[];
+      } catch {
+        throw new Error(
+          'Proof upload may have completed. Check your campaign photos list before trying again.',
+        );
+      }
 
       if (!inserted[0]) {
+        await bestEffortDeleteOrphanedProofObject(input.accessToken, storagePath);
         throw new Error('Proof upload completed, but no campaign photo row was returned.');
       }
 
       return inserted[0];
     } catch (error) {
-      if (insertDefinitelyFailed) {
-        try {
-          await deleteStorageObject(input.accessToken, CAMPAIGN_PROOFS_BUCKET, storagePath);
-        } catch {
-          // Ignore cleanup errors; orphan cleanup can be retried separately.
-        }
+      if (isAbortError(error)) {
+        await bestEffortDeleteOrphanedProofObject(input.accessToken, storagePath);
+        throw new Error('Proof record save timed out. Please try again.');
       }
-
       throw error;
+    } finally {
+      clearTimeout(insertTimer);
     }
   } finally {
     if (stagedCacheUri) {
@@ -791,7 +847,7 @@ export async function createCampaignProofUpload(
   requireConfig();
 
   try {
-    return await withProofUploadTimeout(runCampaignProofUpload(input));
+    return await runCampaignProofUpload(input);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn('[proof-upload]', message);
