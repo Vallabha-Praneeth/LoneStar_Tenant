@@ -151,11 +151,23 @@ function withTimeout<T>(promise: Promise<T>, ms: number, onTimeout: () => Error)
   });
 }
 
-function isAbortError(error: unknown): boolean {
-  if (error && typeof error === 'object' && 'name' in error) {
-    return (error as { name: string }).name === 'AbortError';
-  }
-  return false;
+function withProofInsertTimeout<T>(promise: Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      console.warn('[proof-upload] campaign_photos insert exceeded timeout (ms)', PROOF_DB_INSERT_TIMEOUT_MS);
+      reject(new Error('Proof record save timed out. Please try again.'));
+    }, PROOF_DB_INSERT_TIMEOUT_MS);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 function parseStorageUploadFailureBody(status: number, body: string, fallback: string) {
@@ -697,6 +709,52 @@ async function uploadProofFileNative(uploadUrl: string, fileUri: string, content
   }
 }
 
+async function insertCampaignPhotoRecord(
+  input: CreateCampaignProofUploadInput,
+  photoId: string,
+  storagePath: string,
+): Promise<CampaignPhotoRecord> {
+  requireConfig();
+  console.info('[proof-upload] campaign_photos insert started');
+  const insertResponse = await fetch(
+    `${SUPABASE_URL}/rest/v1/campaign_photos?select=id,organization_id,campaign_id,uploaded_by,storage_path,note,submitted_at,captured_at,is_hidden`,
+    {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${input.accessToken}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify([
+        {
+          id: photoId,
+          organization_id: input.organizationId,
+          campaign_id: input.campaignId,
+          uploaded_by: input.uploadedBy,
+          storage_path: storagePath,
+          note: buildProofNote(input.location, input.notes),
+          captured_at: input.capturedAt ?? null,
+          is_hidden: false,
+        },
+      ]),
+    },
+  );
+  console.info('[proof-upload] campaign_photos insert status', insertResponse.status);
+
+  if (!insertResponse.ok) {
+    throw new Error(await readErrorMessage(insertResponse, 'Unable to record the uploaded proof.'));
+  }
+
+  const inserted = (await insertResponse.json()) as CampaignPhotoRecord[];
+  if (!inserted[0]) {
+    throw new Error('Proof upload completed, but no campaign photo row was returned.');
+  }
+
+  return inserted[0];
+}
+
 async function runCampaignProofUpload(input: CreateCampaignProofUploadInput): Promise<CampaignPhotoRecord> {
   requireConfig();
 
@@ -767,68 +825,12 @@ async function runCampaignProofUpload(input: CreateCampaignProofUploadInput): Pr
       );
     }
 
-    const controller = new AbortController();
-    const insertTimer = setTimeout(() => {
-      console.warn('[proof-upload] campaign_photos insert exceeded timeout (ms)', PROOF_DB_INSERT_TIMEOUT_MS);
-      controller.abort();
-    }, PROOF_DB_INSERT_TIMEOUT_MS);
-
     try {
-      requireConfig();
-      const insertResponse = await fetch(
-        `${SUPABASE_URL}/rest/v1/campaign_photos?select=id,organization_id,campaign_id,uploaded_by,storage_path,note,submitted_at,captured_at,is_hidden`,
-        {
-          method: 'POST',
-          signal: controller.signal,
-          headers: {
-            apikey: SUPABASE_ANON_KEY,
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${input.accessToken}`,
-            Prefer: 'return=representation',
-          },
-          body: JSON.stringify([
-            {
-              id: photoId,
-              organization_id: input.organizationId,
-              campaign_id: input.campaignId,
-              uploaded_by: input.uploadedBy,
-              storage_path: storagePath,
-              note: buildProofNote(input.location, input.notes),
-              captured_at: input.capturedAt ?? null,
-              is_hidden: false,
-            },
-          ]),
-        },
-      );
-
-      if (!insertResponse.ok) {
-        await bestEffortDeleteOrphanedProofObject(input.accessToken, storagePath);
-        throw new Error(await readErrorMessage(insertResponse, 'Unable to record the uploaded proof.'));
-      }
-
-      let inserted: CampaignPhotoRecord[];
-      try {
-        inserted = (await insertResponse.json()) as CampaignPhotoRecord[];
-      } catch {
-        throw new Error(
-          'Proof upload may have completed. Check your campaign photos list before trying again.',
-        );
-      }
-
-      if (!inserted[0]) {
-        await bestEffortDeleteOrphanedProofObject(input.accessToken, storagePath);
-        throw new Error('Proof upload completed, but no campaign photo row was returned.');
-      }
-
-      return inserted[0];
+      return await withProofInsertTimeout(insertCampaignPhotoRecord(input, photoId, storagePath));
     } catch (error) {
-      if (isAbortError(error)) {
-        await bestEffortDeleteOrphanedProofObject(input.accessToken, storagePath);
-        throw new Error('Proof record save timed out. Please try again.');
-      }
+      console.warn('[proof-upload] campaign_photos insert failed', error instanceof Error ? error.message : String(error));
+      await bestEffortDeleteOrphanedProofObject(input.accessToken, storagePath);
       throw error;
-    } finally {
-      clearTimeout(insertTimer);
     }
   } finally {
     if (stagedCacheUri) {
