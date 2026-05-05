@@ -151,22 +151,52 @@ function withTimeout<T>(promise: Promise<T>, ms: number, onTimeout: () => Error)
   });
 }
 
-function withProofInsertTimeout<T>(promise: Promise<T>): Promise<T> {
+function parseErrorMessageFromRaw(raw: string, fallback: string) {
+  if (!raw) {
+    return fallback;
+  }
+  try {
+    const body = JSON.parse(raw) as ErrorResponse;
+    return body.error_description ?? body.error ?? body.message ?? body.msg ?? fallback;
+  } catch {
+    return raw;
+  }
+}
+
+type XhrJsonRequestOptions = {
+  url: string;
+  method: 'POST' | 'DELETE';
+  headers: Record<string, string>;
+  timeoutMs: number;
+  timeoutMessage: string;
+  body?: string;
+};
+
+function performXhrRequest(options: XhrJsonRequestOptions): Promise<{ status: number; responseText: string }> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      console.warn('[proof-upload] campaign_photos insert exceeded timeout (ms)', PROOF_DB_INSERT_TIMEOUT_MS);
-      reject(new Error('Proof record save timed out. Please try again.'));
-    }, PROOF_DB_INSERT_TIMEOUT_MS);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error) => {
-        clearTimeout(timer);
-        reject(error);
-      },
-    );
+    const request = new XMLHttpRequest();
+    request.open(options.method, options.url);
+    request.timeout = options.timeoutMs;
+    Object.entries(options.headers).forEach(([key, value]) => {
+      request.setRequestHeader(key, value);
+    });
+
+    request.onreadystatechange = () => {
+      if (request.readyState === XMLHttpRequest.DONE) {
+        resolve({
+          status: request.status,
+          responseText: request.responseText ?? '',
+        });
+      }
+    };
+    request.onerror = () => {
+      reject(new Error('Network error while contacting the proof upload service.'));
+    };
+    request.ontimeout = () => {
+      reject(new Error(options.timeoutMessage));
+    };
+
+    request.send(options.body ?? null);
   });
 }
 
@@ -251,11 +281,7 @@ async function deleteStorageObject(accessToken: string, bucket: string, storageP
 
 async function bestEffortDeleteOrphanedProofObject(accessToken: string, storagePath: string) {
   try {
-    await withTimeout(
-      deleteStorageObject(accessToken, CAMPAIGN_PROOFS_BUCKET, storagePath),
-      PROOF_STORAGE_CLEANUP_TIMEOUT_MS,
-      () => new Error('Proof storage cleanup timed out.'),
-    );
+    await deleteProofStorageObjectViaXhr(accessToken, storagePath);
   } catch (cleanupError) {
     console.warn(
       '[proof-upload] orphan storage cleanup failed',
@@ -716,43 +742,71 @@ async function insertCampaignPhotoRecord(
 ): Promise<CampaignPhotoRecord> {
   requireConfig();
   console.info('[proof-upload] campaign_photos insert started');
-  const insertResponse = await fetch(
-    `${SUPABASE_URL}/rest/v1/campaign_photos?select=id,organization_id,campaign_id,uploaded_by,storage_path,note,submitted_at,captured_at,is_hidden`,
-    {
-      method: 'POST',
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${input.accessToken}`,
-        'Content-Type': 'application/json',
-        Prefer: 'return=representation',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify([
-        {
-          id: photoId,
-          organization_id: input.organizationId,
-          campaign_id: input.campaignId,
-          uploaded_by: input.uploadedBy,
-          storage_path: storagePath,
-          note: buildProofNote(input.location, input.notes),
-          captured_at: input.capturedAt ?? null,
-          is_hidden: false,
-        },
-      ]),
+  const insertResponse = await performXhrRequest({
+    url: `${SUPABASE_URL}/rest/v1/campaign_photos?select=id,organization_id,campaign_id,uploaded_by,storage_path,note,submitted_at,captured_at,is_hidden`,
+    method: 'POST',
+    timeoutMs: PROOF_DB_INSERT_TIMEOUT_MS,
+    timeoutMessage: 'Proof record save timed out. Please try again.',
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${input.accessToken}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation',
+      Accept: 'application/json',
     },
-  );
+    body: JSON.stringify([
+      {
+        id: photoId,
+        organization_id: input.organizationId,
+        campaign_id: input.campaignId,
+        uploaded_by: input.uploadedBy,
+        storage_path: storagePath,
+        note: buildProofNote(input.location, input.notes),
+        captured_at: input.capturedAt ?? null,
+        is_hidden: false,
+      },
+    ]),
+  });
   console.info('[proof-upload] campaign_photos insert status', insertResponse.status);
 
-  if (!insertResponse.ok) {
-    throw new Error(await readErrorMessage(insertResponse, 'Unable to record the uploaded proof.'));
+  if (insertResponse.status < 200 || insertResponse.status >= 300) {
+    throw new Error(
+      parseErrorMessageFromRaw(insertResponse.responseText, 'Unable to record the uploaded proof.'),
+    );
   }
 
-  const inserted = (await insertResponse.json()) as CampaignPhotoRecord[];
+  let inserted: CampaignPhotoRecord[];
+  try {
+    inserted = JSON.parse(insertResponse.responseText) as CampaignPhotoRecord[];
+  } catch {
+    throw new Error('Unable to read proof save response. Please try again.');
+  }
+
   if (!inserted[0]) {
     throw new Error('Proof upload completed, but no campaign photo row was returned.');
   }
 
   return inserted[0];
+}
+
+async function deleteProofStorageObjectViaXhr(accessToken: string, storagePath: string) {
+  const cleanupResponse = await performXhrRequest({
+    url: createObjectUrl(CAMPAIGN_PROOFS_BUCKET, storagePath, 'object'),
+    method: 'DELETE',
+    timeoutMs: PROOF_STORAGE_CLEANUP_TIMEOUT_MS,
+    timeoutMessage: 'Proof storage cleanup timed out.',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      apikey: SUPABASE_ANON_KEY,
+      Accept: 'application/json',
+    },
+  });
+
+  if (cleanupResponse.status < 200 || cleanupResponse.status >= 300) {
+    throw new Error(
+      parseErrorMessageFromRaw(cleanupResponse.responseText, 'Unable to remove failed proof upload.'),
+    );
+  }
 }
 
 async function runCampaignProofUpload(input: CreateCampaignProofUploadInput): Promise<CampaignPhotoRecord> {
@@ -826,7 +880,7 @@ async function runCampaignProofUpload(input: CreateCampaignProofUploadInput): Pr
     }
 
     try {
-      return await withProofInsertTimeout(insertCampaignPhotoRecord(input, photoId, storagePath));
+      return await insertCampaignPhotoRecord(input, photoId, storagePath);
     } catch (error) {
       console.warn('[proof-upload] campaign_photos insert failed', error instanceof Error ? error.message : String(error));
       await bestEffortDeleteOrphanedProofObject(input.accessToken, storagePath);
